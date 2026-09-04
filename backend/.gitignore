@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.env
+nadir.db
+storage/uploads/*
+storage/tiles/*
+storage/exports/*
+!storage/**/.gitkeep
+*.log
+.DS_Store
