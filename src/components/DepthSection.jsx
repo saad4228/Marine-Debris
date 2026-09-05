@@ -4,7 +4,7 @@ import { smoothstep, prefersReducedMotion, cx } from '../lib/utils.js';
 
 // A landing section parked at a depth. Opacity and a slight vertical drift
 // are tied to distance from the viewport centre, so it belongs to the descent.
-export default function DepthSection({ depth, id, className, veil = true, children }) {
+export default function DepthSection({ depth, id, className, veil = false, children }) {
   const ref = useRef(null);
   const innerRef = useRef(null);
 

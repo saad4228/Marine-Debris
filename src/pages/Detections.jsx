@@ -38,21 +38,27 @@ export default function Detections() {
 
         <p className="readout mt-6 text-foamdim" aria-live="polite">{loading ? 'loading' : `${shown.length} of ${records.length} targets`}</p>
 
-        <ul className="mt-4 grid gap-px border hairline bg-foamdim/20 sm:grid-cols-2 lg:grid-cols-3">
-          {shown.map((r) => (
-            <li key={r.id} className="bg-abyss">
-              <Link to={`/detections/${r.id}`} className="group block p-4 no-underline">
-                <SonarTile seed={r.id} targets={[r.tile]} showBox label={`${r.cls.toUpperCase()} ${r.conf.toFixed(2)}`} aspect={0.72} />
-                <div className="mt-3 flex items-baseline justify-between gap-4">
-                  <span className="font-display text-lg font-bold text-foam group-hover:text-ping">{r.clsInfo.label}</span>
-                  <TierBadge tier={r.risk.tier} score={r.risk.score} />
-                </div>
-                <div className="readout mt-1 text-foamdim">{r.id} · {r.line} · {r.side} · conf {r.conf.toFixed(2)}</div>
-                <div className="mt-1 text-sm text-foamdim">{r.status}</div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        {shown.length > 0 ? (
+          <ul className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {shown.map((r) => (
+              <li key={r.id} className="border hairline bg-abyss/90 transition-colors hover:border-ping/50">
+                <Link to={`/detections/${r.id}`} className="group block p-4 no-underline">
+                  <SonarTile seed={r.id} targets={[r.tile]} showBox label={`${r.cls.toUpperCase()} ${r.conf.toFixed(2)}`} aspect={0.72} />
+                  <div className="mt-3 flex items-baseline justify-between gap-4">
+                    <span className="font-display text-lg font-bold text-foam group-hover:text-ping">{r.clsInfo.label}</span>
+                    <TierBadge tier={r.risk.tier} score={r.risk.score} />
+                  </div>
+                  <div className="readout mt-1 text-foamdim">{r.id} · {r.line} · {r.side} · conf {r.conf.toFixed(2)}</div>
+                  <div className="mt-1 text-sm text-foamdim">{r.status}</div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : !loading ? (
+          <div className="mt-12 py-8 text-center text-foamdim">
+            <p className="readout">No detections found for this category.</p>
+          </div>
+        ) : null}
       </main>
     </div>
   );

@@ -8,7 +8,11 @@ so the same file always gives the same boxes. Used when USE_STUB_MODEL=true
 import hashlib
 from app.pipeline.interface import BaseDetector, DetectionResult
 
-CLASSES = ["tyre", "drum", "container", "ghost-net", "chain", "unknown"]
+CLASSES = [
+    "bottle", "can", "chain", "drink_carton", "hook", "propeller",
+    "tyre", "valve", "plane", "ship", "human", "ghost-net",
+    "crab_pot", "fishing_gear",
+]
 
 
 def _seeded_rng(seed: str):
