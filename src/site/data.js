@@ -103,10 +103,23 @@ export const SITE = {
   //   severity  0..1, harm if left in place
   classes: [
     { id: 'tyre', label: 'Tyre', density: 320, mobility: 0.25, windage: 0.0, severity: 0.45 },
+    { id: 'tire', label: 'Tyre', density: 320, mobility: 0.25, windage: 0.0, severity: 0.45 },
     { id: 'drum', label: 'Drum', density: 260, mobility: 0.5, windage: 0.02, severity: 0.85 },
     { id: 'container', label: 'Container', density: 140, mobility: 0.05, windage: 0.0, severity: 0.7 },
     { id: 'ghost-net', label: 'Ghost net', density: 45, mobility: 0.9, windage: 0.03, severity: 0.9 },
+    { id: 'ghost_net', label: 'Ghost net', density: 45, mobility: 0.9, windage: 0.03, severity: 0.9 },
     { id: 'chain', label: 'Chain or cable', density: 900, mobility: 0.02, windage: 0.0, severity: 0.4 },
+    { id: 'bottle', label: 'Bottle', density: 400, mobility: 0.8, windage: 0.03, severity: 0.5 },
+    { id: 'can', label: 'Can', density: 750, mobility: 0.65, windage: 0.02, severity: 0.5 },
+    { id: 'drink_carton', label: 'Drink carton', density: 280, mobility: 0.85, windage: 0.03, severity: 0.55 },
+    { id: 'hook', label: 'Hook', density: 1200, mobility: 0.03, windage: 0.0, severity: 0.45 },
+    { id: 'propeller', label: 'Propeller', density: 1800, mobility: 0.01, windage: 0.0, severity: 0.6 },
+    { id: 'valve', label: 'Valve', density: 1400, mobility: 0.02, windage: 0.0, severity: 0.5 },
+    { id: 'plane', label: 'Plane wreck', density: 280, mobility: 0.01, windage: 0.0, severity: 0.85 },
+    { id: 'ship', label: 'Shipwreck', density: 350, mobility: 0.01, windage: 0.0, severity: 0.9 },
+    { id: 'human', label: 'Person / Diver', density: 980, mobility: 0.15, windage: 0.01, severity: 1.0 },
+    { id: 'crab_pot', label: 'Crab pot', density: 450, mobility: 0.1, windage: 0.0, severity: 0.75 },
+    { id: 'fishing_gear', label: 'Fishing gear', density: 180, mobility: 0.7, windage: 0.02, severity: 0.8 },
     { id: 'unknown', label: 'Unknown object', density: 300, mobility: 0.3, windage: 0.01, severity: 0.5 },
   ],
 

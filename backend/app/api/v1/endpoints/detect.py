@@ -18,13 +18,17 @@ router = APIRouter()
 async def detect_sonar_image(
     image: UploadFile = File(...),
     persist: bool = True,
+    line: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    depth_m: float | None = None,
     detector: BaseDetector = Depends(get_detector),
     db: AsyncSession = Depends(get_db),
 ):
     """Run candidate detection on an uploaded sonar tile image.
 
     Accepts multipart/form-data with field `image`.
-    Returns `{ detections: [{ cls, conf, x, y, w, h }], metadata: {...} }`.
+    Returns `{ detections: [{ cls, conf, x, y, w, h, lat, lon, ... }], metadata: {...} }`.
     Matches the exact contract expected by NADIR's frontend.
     """
     if not image.filename:
@@ -54,6 +58,17 @@ async def detect_sonar_image(
     # Run detection inference (Stub or real model)
     raw_results = await detector.detect(image_bytes=image_bytes, filename=image.filename)
 
+    # If caller supplied explicit survey location context, overlay them
+    for r in raw_results:
+        if line and not r.line:
+            r.line = line
+        if lat is not None and r.lat is None:
+            r.lat = lat
+        if lon is not None and r.lon is None:
+            r.lon = lon
+        if depth_m is not None and r.depth_m is None:
+            r.depth_m = depth_m
+
     # Persist to database if requested
     if persist and raw_results:
         try:
@@ -72,6 +87,17 @@ async def detect_sonar_image(
             y=r.y,
             w=r.w,
             h=r.h,
+            side=r.side,
+            range_m=r.range_m,
+            depth_m=r.depth_m,
+            lat=r.lat,
+            lon=r.lon,
+            echo_len_m=r.echo_len_m,
+            shadow_len_m=r.shadow_len_m,
+            height_est_m=r.height_est_m,
+            line=r.line,
+            ping=r.ping,
+            notes=r.notes,
         )
         for r in raw_results
     ]
@@ -80,7 +106,7 @@ async def detect_sonar_image(
         detections=boxes,
         metadata=DetectResponseMetadata(
             processing_time_ms=round(duration_ms, 2),
-            model="stub_detector" if settings.USE_STUB_MODEL else "trained_model",
+            model="stub_detector" if settings.USE_STUB_MODEL else "trained_yolo_model",
             stages=[
                 "Correct water column",
                 "Tile the waterfall",

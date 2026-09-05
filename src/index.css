@@ -109,27 +109,13 @@ canvas { display: block; }
 
 /* ---------- landing legibility ---------- */
 
-/* A soft dark pool behind each section's text so copy stays readable
-   while the water is still mid-blue. Not a card: no edge, no radius. */
+/* No dark background pool: text rests directly on the dynamic water animation */
 .veil {
   position: relative;
 }
-.veil::before {
-  content: "";
-  position: absolute;
-  inset: -3rem -4rem;
-  background: radial-gradient(
-    ellipse at 30% 50%,
-    rgba(3, 7, 12, 0.72) 0%,
-    rgba(3, 7, 12, 0.5) 45%,
-    rgba(3, 7, 12, 0) 80%
-  );
-  z-index: -1;
-  pointer-events: none;
-}
 
 .text-shadow-deep {
-  text-shadow: 0 2px 24px rgba(3, 7, 12, 0.9), 0 0 2px rgba(3, 7, 12, 0.8);
+  text-shadow: 0 2px 24px rgba(3, 7, 12, 0.95), 0 1px 4px rgba(3, 7, 12, 0.9), 0 0 2px rgba(3, 7, 12, 0.85);
 }
 
 /* ---------- buttons ---------- */
@@ -165,14 +151,6 @@ canvas { display: block; }
 .hairline { border-color: color-mix(in srgb, var(--color-foamdim) 28%, transparent); }
 .rule-top { border-top: 1px solid color-mix(in srgb, var(--color-foamdim) 40%, transparent); }
 
-.seabed-veil {
-  background: linear-gradient(
-    to bottom,
-    rgba(3, 7, 12, 0.35) 0%,
-    rgba(3, 7, 12, 0.78) 45%,
-    rgba(3, 7, 12, 0.96) 100%
-  );
-}
 
 /* ---------- chips ---------- */
 

@@ -1,33 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SITE } from '../site/data.js';
 import { api, isMock } from '../site/api.js';
 import { TIERS, HAZARD_KINDS } from '../lib/risk.js';
 import { formatHours, formatKg, cx } from '../lib/utils.js';
 import TierBadge from './TierBadge.jsx';
 
-function Section({ title, children, defaultOpen = true }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <section className="border-b hairline">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between px-4 py-3 text-left font-display font-bold hover:text-ping"
-      >
-        {title}
-        <span className="readout text-foamdim" aria-hidden="true">{open ? '−' : '+'}</span>
-      </button>
-      {open && <div className="px-4 pb-4">{children}</div>}
-    </section>
-  );
-}
-
 function Toggle({ checked, onChange, children }) {
   return (
-    <label className="flex cursor-pointer items-center gap-3 py-1 text-sm">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-[#f2a93b]" />
-      {children}
+    <label className="flex cursor-pointer items-center justify-between py-2 text-sm text-foam hover:text-ping">
+      <span>{children}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 rounded accent-[#f2a93b]"
+      />
     </label>
   );
 }
@@ -41,9 +28,13 @@ export default function MapSidebar({
   selectedId, onSelect,
   port,
   mission, onPlan, onClearRoute,
+  onClose,
 }) {
+  const [activeTab, setActiveTab] = useState('targets'); // 'targets' | 'mission' | 'layers'
   const [conds, setConds] = useState(null);
   const [planTiers, setPlanTiers] = useState(new Set(['immediate', 'high']));
+  const [searchQuery, setSearchQuery] = useState('');
+  const [legendOpen, setLegendOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -51,8 +42,15 @@ export default function MapSidebar({
     return () => { alive = false; };
   }, [hours]);
 
-  const counts = TIERS.reduce((m, t) => ({ ...m, [t.id]: records.filter((r) => r.risk.tier.id === t.id).length }), {});
-  const planTargets = visible.filter((r) => planTiers.has(r.risk.tier.id));
+  const counts = useMemo(
+    () => TIERS.reduce((m, t) => ({ ...m, [t.id]: records.filter((r) => r.risk.tier.id === t.id).length }), {}),
+    [records]
+  );
+
+  const planTargets = useMemo(
+    () => visible.filter((r) => planTiers.has(r.risk.tier.id)),
+    [visible, planTiers]
+  );
 
   const toggleSet = (key, id) =>
     setFilters((f) => {
@@ -62,167 +60,413 @@ export default function MapSidebar({
       return { ...f, [key]: next };
     });
 
-  const sorted = [...visible].sort((a, b) => b.risk.score - a.risk.score);
+  const sorted = useMemo(() => {
+    let list = [...visible].sort((a, b) => b.risk.score - a.risk.score);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((r) => r.id.toLowerCase().includes(q) || r.clsInfo.label.toLowerCase().includes(q));
+    }
+    return list;
+  }, [visible, searchQuery]);
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden border-l hairline bg-abyss" aria-label="Map controls">
-      <div className="border-b hairline px-4 py-4">
-        <p className="font-display text-lg font-black">{SITE.area.name}</p>
-        <p className="readout mt-1 text-foamdim">
-          {records.length} targets · {isMock ? 'mock forecast' : 'live forecast'}
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+    <aside className="flex h-full flex-col overflow-hidden border-l hairline bg-abyss/95 backdrop-blur-md" aria-label="Map controls">
+      {/* Header bar */}
+      <div className="border-b hairline p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-display text-base font-black tracking-tight text-foam">{SITE.area.name}</p>
+            <p className="readout mt-0.5 text-xs text-foamdim">
+              {visible.length} of {records.length} targets · {isMock ? 'simulation' : 'live telemetry'}
+            </p>
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid h-7 w-7 place-items-center text-foamdim hover:text-foam"
+              title="Close panel"
+              aria-label="Close panel"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Tier counts overview */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
           {TIERS.map((t) => (
-            <span key={t.id} className={cx('tier', `tier-${t.id}`)}>{t.label} <span className="num">{counts[t.id]}</span></span>
+            <span key={t.id} className={cx('tier text-[11px] py-0.5 px-1.5', `tier-${t.id}`)}>
+              {t.label} <span className="num font-bold">{counts[t.id] || 0}</span>
+            </span>
           ))}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <Section title="Forecast horizon">
-          <div className="flex items-baseline justify-between">
-            <span className="text-sm text-foamdim">Positions shown at</span>
-            <span className="readout-md text-ping">{hours === 0 ? 'now' : `+${hours} h`}</span>
-          </div>
-          <input
-            type="range" min={0} max={48} step={6} value={hours}
-            onChange={(e) => setHours(Number(e.target.value))}
-            aria-label="Forecast horizon in hours"
-            className="mt-2 w-full accent-[#f2a93b]"
-          />
-          <div className="readout flex justify-between text-foamdim"><span>now</span><span>24 h</span><span>48 h</span></div>
-          {conds && (
-            <dl className="readout mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-foamdim">
-              <dt>current</dt>
-              <dd className="text-foam">{conds.current.speed.toFixed(2)} m/s toward {Math.round(conds.current.bearing)}°</dd>
-              <dt>wind</dt>
-              <dd className="text-foam">{conds.wind.speed.toFixed(1)} m/s toward {Math.round(conds.wind.bearing)}°</dd>
-            </dl>
+      {/* Modern Tab Selector */}
+      <nav className="flex border-b hairline bg-abyss/40" aria-label="Sidebar sections">
+        <button
+          type="button"
+          onClick={() => setActiveTab('targets')}
+          className={cx(
+            'flex-1 py-2.5 text-xs font-display font-bold uppercase tracking-wider transition-colors',
+            activeTab === 'targets'
+              ? 'border-b-2 border-ping bg-ping/5 text-ping'
+              : 'text-foamdim hover:text-foam'
           )}
-        </Section>
-
-        <Section title="Mission planner">
-          <p className="text-sm text-foamdim">
-            Optimised visiting order from {port.name} for the selected tiers, using positions at the chosen horizon.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {TIERS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className="chip"
-                aria-pressed={planTiers.has(t.id)}
-                onClick={() => setPlanTiers((s) => { const n = new Set(s); if (n.has(t.id)) n.delete(t.id); else n.add(t.id); return n; })}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button type="button" className="btn btn-solid btn-sm" disabled={mission.running || planTargets.length === 0} onClick={() => onPlan(planTargets.map((r) => r.id))}>
-              {mission.running ? 'Planning' : `Plan route for ${planTargets.length}`}
-            </button>
-            {mission.route && (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={onClearRoute}>Clear</button>
-            )}
-          </div>
-          {mission.error && <p className="mt-3 border-l-2 border-flag pl-3 text-sm text-foamdim">{mission.error}</p>}
-          {mission.route && (
-            <div className="mt-4">
-              <dl className="grid grid-cols-3 gap-2 border hairline text-center">
-                <div className="border-r hairline p-2"><dd className="font-display text-xl font-black">{mission.route.totalNm.toFixed(1)}</dd><dt className="readout text-foamdim">nm</dt></div>
-                <div className="border-r hairline p-2"><dd className="font-display text-xl font-black">{formatHours(mission.route.hours)}</dd><dt className="readout text-foamdim">incl. recovery</dt></div>
-                <div className="p-2"><dd className="font-display text-xl font-black">{Math.round(mission.route.fuelL)}</dd><dt className="readout text-foamdim">L fuel</dt></div>
-              </dl>
-              <ol className="mt-3 space-y-1">
-                {mission.route.order.map((id, i) => {
-                  const r = records.find((x) => x.id === id);
-                  const leg = mission.route.legs[i];
-                  return (
-                    <li key={id}>
-                      <button type="button" onClick={() => onSelect(id)} className="flex w-full items-center gap-3 py-1 text-left text-sm hover:text-ping">
-                        <span className="grid h-5 w-5 place-items-center bg-sun font-display text-xs font-bold text-abyss">{i + 1}</span>
-                        <span className="font-display font-bold">{id}</span>
-                        <span className="text-foamdim">{r ? r.clsInfo.label : ''}</span>
-                        <span className="num ml-auto text-foamdim">{leg ? `${leg.nm.toFixed(1)} nm` : ''}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ol>
-              <p className="readout mt-3 text-foamdim">
-                Straight-line legs at {SITE.vessel.speedKn} kn, {SITE.vessel.minutesPerRecovery} min per recovery, return to port included.
-              </p>
-            </div>
+        >
+          Targets ({sorted.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('mission')}
+          className={cx(
+            'flex-1 py-2.5 text-xs font-display font-bold uppercase tracking-wider transition-colors',
+            activeTab === 'mission'
+              ? 'border-b-2 border-ping bg-ping/5 text-ping'
+              : 'text-foamdim hover:text-foam'
           )}
-        </Section>
+        >
+          Mission {mission.route ? '•' : ''}
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('layers')}
+          className={cx(
+            'flex-1 py-2.5 text-xs font-display font-bold uppercase tracking-wider transition-colors',
+            activeTab === 'layers'
+              ? 'border-b-2 border-ping bg-ping/5 text-ping'
+              : 'text-foamdim hover:text-foam'
+          )}
+        >
+          Layers & Filters
+        </button>
+      </nav>
 
-        <Section title="Filters">
-          <p className="readout text-foamdim">priority</p>
-          <div className="mt-1 flex flex-wrap gap-2">
-            {TIERS.map((t) => (
-              <button key={t.id} type="button" className="chip" aria-pressed={filters.tiers.has(t.id)} onClick={() => toggleSet('tiers', t.id)}>{t.label}</button>
-            ))}
-          </div>
-          <p className="readout mt-3 text-foamdim">class</p>
-          <div className="mt-1 flex flex-wrap gap-2">
-            {SITE.classes.map((c) => (
-              <button key={c.id} type="button" className="chip" aria-pressed={filters.classes.has(c.id)} onClick={() => toggleSet('classes', c.id)}>{c.label}</button>
-            ))}
-          </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="readout text-foamdim">min confidence</span>
-            <span className="readout-md text-ping">{filters.minConf.toFixed(2)}</span>
-          </div>
-          <input type="range" min={0} max={1} step={0.05} value={filters.minConf} onChange={(e) => setFilters((f) => ({ ...f, minConf: Number(e.target.value) }))} aria-label="Minimum confidence" className="w-full accent-[#f2a93b]" />
-        </Section>
-
-        <Section title="Layers">
-          <Toggle checked={layers.drift} onChange={(v) => setLayers((l) => ({ ...l, drift: v }))}>Drift tracks (dotted, 6 h nodes)</Toggle>
-          <Toggle checked={layers.hazards} onChange={(v) => setLayers((l) => ({ ...l, hazards: v }))}>Hazard zones</Toggle>
-          <Toggle checked={layers.currents} onChange={(v) => setLayers((l) => ({ ...l, currents: v }))}>Current field</Toggle>
-          <Toggle checked={layers.seamarks} onChange={(v) => setLayers((l) => ({ ...l, seamarks: v }))}>OpenSeaMap seamarks</Toggle>
-          <Toggle checked={layers.route} onChange={(v) => setLayers((l) => ({ ...l, route: v }))}>Mission route</Toggle>
-        </Section>
-
-        <Section title={`Targets (${sorted.length})`}>
-          <ul className="divide-y hairline">
-            {sorted.map((r) => (
-              <li key={r.id}>
+      {/* Main Tab Panels */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {/* TAB 1: TARGETS */}
+        {activeTab === 'targets' && (
+          <div className="space-y-3">
+            <div className="relative">
+              <input
+                type="search"
+                placeholder="Search targets by ID or class..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full border hairline bg-abyss/80 px-3 py-1.5 text-xs text-foam placeholder:text-foamdim/60 focus:border-ping focus:outline-none"
+              />
+              {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => onSelect(r.id)}
-                  aria-current={r.id === selectedId ? 'true' : undefined}
-                  className={cx('flex w-full flex-col gap-0.5 py-2 text-left hover:bg-mid/30', r.id === selectedId && 'bg-ping/10')}
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1.5 text-xs text-foamdim hover:text-foam"
                 >
-                  <span className="flex w-full items-baseline justify-between gap-2">
-                    <span className="font-display font-bold">{r.id}</span>
-                    <TierBadge tier={r.risk.tier} score={r.risk.score} />
-                  </span>
-                  <span className="readout text-foamdim">
-                    {r.clsInfo.label} · {r.conf.toFixed(2)} · {formatKg(r.weightKg)} · drift {r.risk.displacementKm.toFixed(2)} km
-                  </span>
+                  ✕
                 </button>
-              </li>
-            ))}
-            {sorted.length === 0 && <li className="py-2 text-sm text-foamdim">Nothing matches the filters.</li>}
-          </ul>
-        </Section>
+              )}
+            </div>
 
-        <Section title="Legend" defaultOpen={false}>
-          <ul className="space-y-1 text-sm">
-            {TIERS.map((t) => (
-              <li key={t.id} className="flex items-center gap-2"><span className="h-3 w-3" style={{ background: t.color }} />{t.label} priority</li>
-            ))}
-            <li className="flex items-center gap-2"><span className="h-0 w-6 border-t-2 border-dashed border-ping" />drift track, nodes every 6 h</li>
-            <li className="flex items-center gap-2"><span className="h-0 w-6 border-t-2 border-sun" />mission route</li>
-            <li className="flex items-center gap-2"><span className="h-3 w-3 rotate-45 bg-sun" />home port</li>
-            {Object.entries(HAZARD_KINDS).map(([k, v]) => (
-              <li key={k} className="flex items-center gap-2"><span className="h-3 w-3 border border-dashed" style={{ borderColor: v.color, background: `${v.color}22` }} />{v.label}</li>
-            ))}
-          </ul>
-        </Section>
+            <ul className="space-y-1.5">
+              {sorted.map((r) => {
+                const isSel = r.id === selectedId;
+                return (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      onClick={() => onSelect(r.id)}
+                      aria-current={isSel ? 'true' : undefined}
+                      className={cx(
+                        'flex w-full flex-col border p-2.5 text-left transition-all',
+                        isSel
+                          ? 'border-ping bg-ping/10 shadow-[0_0_12px_rgba(242,169,59,0.15)]'
+                          : 'border-hairline bg-abyss/60 hover:border-foamdim/40 hover:bg-mid/20'
+                      )}
+                    >
+                      <div className="flex w-full items-baseline justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className={cx('h-2 w-2 rounded-full', isSel ? 'bg-ping animate-pulse' : 'bg-foamdim')} />
+                          <span className="font-display text-sm font-bold text-foam">{r.id}</span>
+                          <span className="text-xs text-foamdim">({r.clsInfo.label})</span>
+                        </div>
+                        <TierBadge tier={r.risk.tier} score={r.risk.score} />
+                      </div>
+                      <div className="readout mt-1 flex items-center justify-between text-[11px] text-foamdim">
+                        <span>conf {r.conf.toFixed(2)} · {formatKg(r.weightKg)}</span>
+                        <span className="text-ping">drift {r.risk.displacementKm.toFixed(2)} km</span>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+              {sorted.length === 0 && (
+                <li className="py-8 text-center text-xs text-foamdim">
+                  No targets match current filters or search.
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+
+        {/* TAB 2: MISSION PLANNER */}
+        {activeTab === 'mission' && (
+          <div className="space-y-4">
+            <div>
+              <p className="font-display text-sm font-bold text-foam">Recovery Route Planner</p>
+              <p className="mt-1 text-xs text-foamdim">
+                Optimised multi-waypoint path originating from <strong className="text-foam">{port.name}</strong>.
+              </p>
+            </div>
+
+            <div>
+              <label className="readout text-xs text-foamdim">Select priority tiers to include</label>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {TIERS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="chip text-xs"
+                    aria-pressed={planTiers.has(t.id)}
+                    onClick={() =>
+                      setPlanTiers((s) => {
+                        const n = new Set(s);
+                        if (n.has(t.id)) n.delete(t.id);
+                        else n.add(t.id);
+                        return n;
+                      })
+                    }
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                className="btn btn-solid btn-sm flex-1 justify-center"
+                disabled={mission.running || planTargets.length === 0}
+                onClick={() => onPlan(planTargets.map((r) => r.id))}
+              >
+                {mission.running ? 'Computing optimum route...' : `Plan Route (${planTargets.length} targets)`}
+              </button>
+              {mission.route && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={onClearRoute}>
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {mission.error && (
+              <p className="border-l-2 border-flag bg-flag/10 p-2 text-xs text-foam">
+                {mission.error}
+              </p>
+            )}
+
+            {mission.route && (
+              <div className="mt-4 space-y-3">
+                <dl className="grid grid-cols-3 gap-1.5 border hairline bg-abyss/80 p-2 text-center">
+                  <div className="border-r hairline pr-2">
+                    <dd className="font-display text-lg font-black text-foam">{mission.route.totalNm.toFixed(1)}</dd>
+                    <dt className="readout text-[10px] text-foamdim">distance (nm)</dt>
+                  </div>
+                  <div className="border-r hairline px-2">
+                    <dd className="font-display text-lg font-black text-foam">{formatHours(mission.route.hours)}</dd>
+                    <dt className="readout text-[10px] text-foamdim">mission duration</dt>
+                  </div>
+                  <div className="pl-2">
+                    <dd className="font-display text-lg font-black text-foam">{Math.round(mission.route.fuelL)}</dd>
+                    <dt className="readout text-[10px] text-foamdim">fuel (L)</dt>
+                  </div>
+                </dl>
+
+                <p className="readout text-xs text-foamdim">Waypoint sequence:</p>
+                <ol className="space-y-1">
+                  {mission.route.order.map((id, i) => {
+                    const r = records.find((x) => x.id === id);
+                    const leg = mission.route.legs[i];
+                    return (
+                      <li key={id}>
+                        <button
+                          type="button"
+                          onClick={() => onSelect(id)}
+                          className="flex w-full items-center gap-2.5 border hairline bg-abyss/60 p-2 text-left text-xs transition-colors hover:border-ping"
+                        >
+                          <span className="grid h-5 w-5 place-items-center bg-sun font-display text-[11px] font-bold text-abyss">
+                            {i + 1}
+                          </span>
+                          <span className="font-display font-bold text-foam">{id}</span>
+                          <span className="text-foamdim">{r ? r.clsInfo.label : ''}</span>
+                          <span className="readout ml-auto text-foamdim">{leg ? `${leg.nm.toFixed(1)} nm` : ''}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+
+                <p className="readout text-[11px] text-foamdim">
+                  Based on {SITE.vessel.speedKn} kn transit, {SITE.vessel.minutesPerRecovery} min recovery/target, port return included.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: LAYERS & FILTERS */}
+        {activeTab === 'layers' && (
+          <div className="space-y-5">
+            {/* Layers */}
+            <div>
+              <p className="font-display text-xs font-bold uppercase tracking-wider text-foamdim">Map Layer Overlays</p>
+              <div className="mt-2 divide-y hairline border-y hairline">
+                <Toggle checked={layers.drift} onChange={(v) => setLayers((l) => ({ ...l, drift: v }))}>
+                  Drift tracks (dotted 6 h nodes)
+                </Toggle>
+                <Toggle checked={layers.hazards} onChange={(v) => setLayers((l) => ({ ...l, hazards: v }))}>
+                  Hazard zones (marine parks & lanes)
+                </Toggle>
+                <Toggle checked={layers.currents} onChange={(v) => setLayers((l) => ({ ...l, currents: v }))}>
+                  Ocean current field
+                </Toggle>
+                <Toggle checked={layers.seamarks} onChange={(v) => setLayers((l) => ({ ...l, seamarks: v }))}>
+                  OpenSeaMap seamarks
+                </Toggle>
+                <Toggle checked={layers.route} onChange={(v) => setLayers((l) => ({ ...l, route: v }))}>
+                  Planned mission route
+                </Toggle>
+              </div>
+            </div>
+
+            {/* Target Filters */}
+            <div>
+              <p className="font-display text-xs font-bold uppercase tracking-wider text-foamdim">Priority Tiers</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {TIERS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="chip text-xs"
+                    aria-pressed={filters.tiers.has(t.id)}
+                    onClick={() => toggleSet('tiers', t.id)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="font-display text-xs font-bold uppercase tracking-wider text-foamdim">Target Classes</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {SITE.classes.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="chip text-xs"
+                    aria-pressed={filters.classes.has(c.id)}
+                    onClick={() => toggleSet('classes', c.id)}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-baseline justify-between">
+                <span className="readout text-xs text-foamdim">Min Confidence</span>
+                <span className="readout-md text-sm text-ping">{filters.minConf.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={filters.minConf}
+                onChange={(e) => setFilters((f) => ({ ...f, minConf: Number(e.target.value) }))}
+                aria-label="Minimum confidence"
+                className="mt-2 w-full accent-[#f2a93b]"
+              />
+            </div>
+
+            {/* Forecast Horizon inside layers tab too */}
+            <div className="border-t hairline pt-4">
+              <div className="flex items-baseline justify-between">
+                <span className="readout text-xs text-foamdim">Drift Horizon</span>
+                <span className="readout-md text-sm text-ping">{hours === 0 ? 'Now' : `+${hours} h`}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={48}
+                step={6}
+                value={hours}
+                onChange={(e) => setHours(Number(e.target.value))}
+                aria-label="Forecast horizon in hours"
+                className="mt-2 w-full accent-[#f2a93b]"
+              />
+              <div className="readout flex justify-between text-[11px] text-foamdim">
+                <span>0 h (Now)</span>
+                <span>+24 h</span>
+                <span>+48 h</span>
+              </div>
+              {conds && (
+                <dl className="readout mt-2 grid grid-cols-[auto_1fr] gap-x-3 text-[11px] text-foamdim">
+                  <dt>Current:</dt>
+                  <dd className="text-foam">{conds.current.speed.toFixed(2)} m/s @ {Math.round(conds.current.bearing)}°</dd>
+                  <dt>Wind:</dt>
+                  <dd className="text-foam">{conds.wind.speed.toFixed(1)} m/s @ {Math.round(conds.wind.bearing)}°</dd>
+                </dl>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Collapsible Legend Drawer at bottom */}
+      <div className="border-t hairline bg-abyss/80">
+        <button
+          type="button"
+          onClick={() => setLegendOpen((o) => !o)}
+          aria-expanded={legendOpen}
+          className="flex w-full items-center justify-between px-4 py-2.5 text-left text-xs font-display font-bold uppercase tracking-wider text-foam hover:text-ping"
+        >
+          <span>Map Symbol Legend</span>
+          <span className="readout text-foamdim">{legendOpen ? '−' : '+'}</span>
+        </button>
+        {legendOpen && (
+          <div className="border-t hairline px-4 py-3 text-xs">
+            <ul className="space-y-1.5">
+              {TIERS.map((t) => (
+                <li key={t.id} className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
+                  <span className="text-foam">{t.label} priority target</span>
+                </li>
+              ))}
+              <li className="flex items-center gap-2">
+                <span className="h-0 w-5 border-t-2 border-dashed border-ping" />
+                <span className="text-foamdim">Drift forecast track (6 h nodes)</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="h-0 w-5 border-t-2 border-sun" />
+                <span className="text-foamdim">Optimised mission route</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rotate-45 bg-sun" />
+                <span className="text-foamdim">Home port departure / return</span>
+              </li>
+              {Object.entries(HAZARD_KINDS).map(([k, v]) => (
+                <li key={k} className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 border border-dashed" style={{ borderColor: v.color, background: `${v.color}33` }} />
+                  <span className="text-foamdim">{v.label}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </aside>
   );
 }
+

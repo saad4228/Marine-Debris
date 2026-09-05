@@ -31,8 +31,8 @@ class Settings(BaseSettings):
         return p
 
     # ── ML Model ──────────────────────────────────────────────────────────
-    MODEL_PATH: str = ""
-    USE_STUB_MODEL: bool = True
+    MODEL_PATH: str = "best.pt"
+    USE_STUB_MODEL: bool = False
 
 
 settings = Settings()

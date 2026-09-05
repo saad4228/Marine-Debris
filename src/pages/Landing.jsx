@@ -81,14 +81,14 @@ export default function Landing() {
         </DepthSection>
 
         <DepthSection depth={14} id="problem">
-          <h2 className="h-section measure">What sinks stops being anyone&rsquo;s problem.</h2>
-          <div className="measure mt-8 space-y-5 text-foam">
+          <h2 className="h-section measure text-shadow-deep">What sinks stops being anyone&rsquo;s problem.</h2>
+          <div className="measure mt-8 space-y-5 text-foam text-shadow-deep">
             <p>A net slips off a trawler and keeps fishing for twenty years. A container goes over the side and leaks in the dark. Tyres, drums and cable snag anchors, gear and reef, and nobody sees any of it because it is under forty metres of silty water.</p>
             <p>Nobody can clean what nobody has mapped. And nobody can plan a clean-up for something that has moved since it was mapped.</p>
           </div>
           <ul className="measure mt-10 grid gap-3 sm:grid-cols-3">
             {[['Ghost nets', 'keep catching for decades'], ['Drums and containers', 'leak slowly, out of sight'], ['Tyres, chain, cable', 'snag gear and reef']].map(([k, v]) => (
-              <li key={k} className="border-l-2 border-flag pl-3">
+              <li key={k} className="border-l-2 border-flag pl-3 text-shadow-deep">
                 <span className="block font-display font-bold">{k}</span>
                 <span className="text-foamdim">{v}</span>
               </li>
@@ -97,14 +97,14 @@ export default function Landing() {
         </DepthSection>
 
         <DepthSection depth={46} id="sound">
-          <h2 className="h-section measure">Light gives out. Sound doesn&rsquo;t.</h2>
-          <div className="measure mt-8 space-y-5 text-foam">
+          <h2 className="h-section measure text-shadow-deep">Light gives out. Sound doesn&rsquo;t.</h2>
+          <div className="measure mt-8 space-y-5 text-foam text-shadow-deep">
             <p>A camera in coastal water dies within metres. Side-scan sonar images tens of metres to either side of the towfish regardless of visibility, at survey speed, all day.</p>
             <p>But sonar imagery is strange to read. An object shows up as a bright acoustic echo, and behind it, away from the sonar, a black shadow where the sound never reached. The shadow is not noise. Its length is the object&rsquo;s height, projected by the geometry of the ping. Its shape is the object&rsquo;s profile.</p>
           </div>
           <figure className="mt-10 max-w-xl">
             <SonarTile seed="legend-echo-shadow" targets={LEGEND_TARGET} aspect={0.5} nadirWidth={0.08} />
-            <figcaption className="mt-3 flex flex-wrap gap-x-8 gap-y-1 text-sm text-foamdim">
+            <figcaption className="mt-3 flex flex-wrap gap-x-8 gap-y-1 text-sm text-foamdim text-shadow-deep">
               <span><span className="mr-2 inline-block h-2.5 w-2.5 bg-[#ffd68c] align-middle" aria-hidden="true" />bright echo, facing the nadir</span>
               <span><span className="mr-2 inline-block h-2.5 w-2.5 border border-foamdim bg-abyss align-middle" aria-hidden="true" />acoustic shadow, falling outward</span>
             </figcaption>
@@ -112,22 +112,22 @@ export default function Landing() {
         </DepthSection>
 
         <DepthSection depth={88} id="survey">
-          <h2 className="h-section measure">One boat, two fans of sound.</h2>
-          <div className="measure mt-8 space-y-5 text-foam">
+          <h2 className="h-section measure text-shadow-deep">One boat, two fans of sound.</h2>
+          <div className="measure mt-8 space-y-5 text-foam text-shadow-deep">
             <p>The towfish is pulled behind the vessel and pings sideways, sweeping a swath of seabed to port and to starboard. Directly beneath it is the nadir: a strip the beams cannot see. So survey lines are run overlapping, and every patch of seabed is imaged at least twice, from opposite sides.</p>
             <p>That overlap is what lets us see a target&rsquo;s shadow fall both ways, and what lets the system tell one object from two.</p>
           </div>
-          <div className="mt-10 max-w-4xl border hairline bg-abyss/70 p-3 md:p-5">
+          <div className="mt-10 max-w-4xl p-1 md:p-3">
             <SurveyDiagram className="h-auto w-full" />
           </div>
         </DepthSection>
 
         <DepthSection depth={132} id="pipeline">
-          <h2 className="h-section measure">The part a person shouldn&rsquo;t have to do.</h2>
-          <p className="measure mt-8 text-foam">A survey day produces kilometres of waterfall. NADIR does the scrolling, then does what the scrolling was for: it tells the boat where to go.</p>
+          <h2 className="h-section measure text-shadow-deep">The part a person shouldn&rsquo;t have to do.</h2>
+          <p className="measure mt-8 text-foam text-shadow-deep">A survey day produces kilometres of waterfall. NADIR does the scrolling, then does what the scrolling was for: it tells the boat where to go.</p>
           <ol className="mt-10 max-w-3xl border-t hairline">
             {SITE.pipeline.map((step, i) => (
-              <li key={step.title} className="grid grid-cols-[3rem_1fr] gap-4 border-b hairline py-6 md:grid-cols-[4rem_1fr]">
+              <li key={step.title} className="grid grid-cols-[3rem_1fr] gap-4 border-b hairline py-6 md:grid-cols-[4rem_1fr] text-shadow-deep">
                 <span className="font-display text-3xl font-black leading-none text-ping md:text-4xl" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
                 <div>
                   <h3 className="text-xl md:text-2xl">{step.title}</h3>
@@ -138,12 +138,12 @@ export default function Landing() {
           </ol>
         </DepthSection>
 
-        <DepthSection depth={180} id="seabed" className="seabed-veil" veil={false}>
-          <h2 className="h-section measure">Seabed.</h2>
-          <p className="measure mt-6 text-foam">Behind this text is the system&rsquo;s view of the world: a live side-scan waterfall, drawn ping by ping. What follows is what it found.</p>
+        <DepthSection depth={180} id="seabed" veil={false}>
+          <h2 className="h-section measure text-shadow-deep">Seabed.</h2>
+          <p className="measure mt-6 text-foam text-shadow-deep">Behind this text is the system&rsquo;s view of the world: a live side-scan waterfall, drawn ping by ping. What follows is what it found.</p>
           <dl className="mt-10 grid max-w-5xl grid-cols-2 border hairline md:grid-cols-4">
             {SITE.metrics.map((m) => (
-              <div key={m.label} className="border hairline p-5 md:p-6">
+              <div key={m.label} className="border hairline p-5 md:p-6 text-shadow-deep">
                 <dd className="font-display text-4xl font-black leading-none tracking-tight md:text-5xl">{m.value}</dd>
                 <dt className="mt-3 text-sm text-foamdim">{m.label}{m.unit ? <span className="readout ml-2 text-ping">{m.unit}</span> : null}</dt>
               </div>
@@ -151,7 +151,7 @@ export default function Landing() {
           </dl>
           <div className="mt-14 grid max-w-5xl gap-10 md:grid-cols-3">
             {SITE.findings.map((f) => (
-              <article key={f.title} className="rule-top pt-5">
+              <article key={f.title} className="rule-top pt-5 text-shadow-deep">
                 <h3 className="text-xl">{f.title}</h3>
                 <p className="mt-3 text-foamdim">{f.body}</p>
               </article>

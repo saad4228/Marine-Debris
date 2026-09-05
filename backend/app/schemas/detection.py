@@ -7,13 +7,26 @@ from pydantic import BaseModel, Field
 # ── Bounding box returned by the detector ─────────────────────────────────────
 
 class BoundingBox(BaseModel):
-    """Normalised bounding box — x, y, w, h as 0..1 fractions of the image."""
-    cls: str = Field(..., description="Class id: tyre, drum, container, ghost-net, chain, unknown")
+    """Normalised bounding box — x, y, w, h as 0..1 fractions of the image, with sonar telemetry."""
+    cls: str = Field(..., description="Class id: tyre, drum, container, ghost-net, chain, unknown, bottle, etc.")
     conf: float = Field(..., ge=0.0, le=1.0, description="Model confidence 0–1")
     x: float = Field(..., ge=0.0, le=1.0)
     y: float = Field(..., ge=0.0, le=1.0)
     w: float = Field(..., ge=0.0, le=1.0)
     h: float = Field(..., ge=0.0, le=1.0)
+
+    # Optional sonar geometry & location details
+    side: str | None = None
+    range_m: float | None = None
+    depth_m: float | None = None
+    lat: float | None = None
+    lon: float | None = None
+    echo_len_m: float | None = None
+    shadow_len_m: float | None = None
+    height_est_m: float | None = None
+    line: str | None = None
+    ping: int | None = None
+    notes: str | None = None
 
 
 # ── Response from POST /detect ────────────────────────────────────────────────

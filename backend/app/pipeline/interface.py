@@ -12,12 +12,25 @@ from dataclasses import dataclass
 @dataclass
 class DetectionResult:
     """A single detected object — returned by every detector implementation."""
-    cls: str       # class id: tyre, drum, container, ghost-net, chain, unknown
+    cls: str       # class id: tyre, drum, container, ghost-net, chain, unknown, bottle, can, etc.
     conf: float    # confidence 0–1
     x: float       # normalised bounding box left   (0–1)
     y: float       # normalised bounding box top    (0–1)
     w: float       # normalised bounding box width  (0–1)
     h: float       # normalised bounding box height (0–1)
+
+    # Sonar geometry & location details
+    side: str | None = None          # port / starboard
+    range_m: float | None = None     # ground range from nadir track in metres
+    depth_m: float | None = None     # seabed / sensor depth in metres
+    lat: float | None = None         # georeferenced latitude
+    lon: float | None = None         # georeferenced longitude
+    echo_len_m: float | None = None   # acoustic echo length (metres)
+    shadow_len_m: float | None = None # acoustic shadow length (metres)
+    height_est_m: float | None = None # estimated object relief/height (metres)
+    line: str | None = None          # survey line id
+    ping: int | None = None          # ping sequence number
+    notes: str | None = None         # analyst or model notes
 
 
 class BaseDetector(ABC):
