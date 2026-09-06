@@ -80,12 +80,17 @@ export function scoreRisk(det, cls, track, hazards, weightKg) {
   const massNorm = clamp(Math.log10(Math.max(1, weightKg)) / 3.5);
   const dispKm = trackDisplacementKm(track);
   const dispNorm = clamp(dispKm / 3);
+  const dimsStr = Array.isArray(det.dims)
+    ? det.dims.join(' × ')
+    : typeof det.dims === 'object' && det.dims
+    ? `${Number(det.dims.length || 2.0).toFixed(1)} × ${Number(det.dims.width || 1.5).toFixed(1)} × ${Number(det.dims.height || 1.0).toFixed(1)}`
+    : '2.0 × 1.5 × 1.0';
 
   const factors = [
     { key: 'hazard', label: 'Hazard exposure', value: hazardScore, weight: WEIGHTS.hazard, detail: hits.length ? hits.map((h) => `${h.name} (${h.when})`).join('; ') : 'No hazard zone within 2.5 km of the track' },
     { key: 'severity', label: 'Debris severity', value: cls.severity, weight: WEIGHTS.severity, detail: `${cls.label} class prior` },
-    { key: 'confidence', label: 'Detection confidence', value: det.conf, weight: WEIGHTS.confidence, detail: `Model confidence ${det.conf.toFixed(2)}` },
-    { key: 'mass', label: 'Estimated mass', value: massNorm, weight: WEIGHTS.mass, detail: `${Math.round(weightKg)} kg estimated from ${det.dims.join(' × ')} m` },
+    { key: 'confidence', label: 'Detection confidence', value: det.conf, weight: WEIGHTS.confidence, detail: `Model confidence ${(det.conf || 0).toFixed(2)}` },
+    { key: 'mass', label: 'Estimated mass', value: massNorm, weight: WEIGHTS.mass, detail: `${Math.round(weightKg)} kg estimated from ${dimsStr} m` },
     { key: 'mobility', label: 'Mobility', value: cls.mobility, weight: WEIGHTS.mobility, detail: cls.mobility > 0.5 ? 'Likely to move under current' : 'Likely to stay put' },
     { key: 'displacement', label: 'Forecast displacement', value: dispNorm, weight: WEIGHTS.displacement, detail: `${dispKm.toFixed(2)} km over ${end.hours} h` },
   ].map((f) => ({ ...f, contribution: f.value * f.weight }));

@@ -84,8 +84,18 @@ export function classLabel(classes, id) {
 
 // Estimated mass from bounding dimensions and a per-class bulk density.
 export function estimateWeightKg(cls, dims) {
-  const [L, W, H] = dims;
-  return Math.max(1, L * W * H * cls.density);
+  if (!dims) return Math.max(1, 1.5 * 1.5 * 1.0 * (cls?.density || 300));
+  let L, W, H;
+  if (Array.isArray(dims)) {
+    [L = 1.5, W = 1.5, H = 1.0] = dims;
+  } else if (typeof dims === 'object') {
+    L = dims.length || dims.L || 1.5;
+    W = dims.width || dims.W || 1.5;
+    H = dims.height || dims.H || 1.0;
+  } else {
+    L = 1.5; W = 1.5; H = 1.0;
+  }
+  return Math.max(1, Number(L) * Number(W) * Number(H) * (cls?.density || 300));
 }
 
 export function cx(...parts) {

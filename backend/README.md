@@ -40,28 +40,27 @@ uvicorn app.main:app --reload --port 8000
 
 ---
 
-## Where to Plug In Your Real ML Model
+## Trained ML Model (Integrated)
 
-The architecture reserves a clean, isolated slot for your model:
+The backend ships with a trained **Ultralytics YOLO** model (`best.pt` / `best.zip`) for marine debris detection.
 
-1. Look in `app/pipeline/interface.py` to inspect `BaseDetector` and `DetectionResult`.
-2. Implement your detector in `app/pipeline/` (e.g. `app/pipeline/yolo_detector.py`):
-   ```python
-   from app.pipeline.interface import BaseDetector, DetectionResult
+### 14 Detection Classes
+`bottle`, `can`, `chain`, `drink_carton`, `hook`, `propeller`, `tire`/`tyre`, `valve`, `plane`, `ship`, `human`, `ghost_net`/`ghost-net`, `crab_pot`, `fishing_gear`
 
-   class RealSonarDetector(BaseDetector):
-       def __init__(self, weights_path: str):
-           # load your PyTorch / ONNX model here
-           pass
+### Configuration
+In `.env`:
+```bash
+MODEL_PATH=best.pt       # path to weights file
+USE_STUB_MODEL=false     # set true to use fake detections for dev
+```
 
-       async def detect(self, image_bytes: bytes, filename: str) -> list[DetectionResult]:
-           # Run preprocessing, model inference, NMS
-           # Return list of DetectionResult(cls=..., conf=..., x=..., y=..., w=..., h=...)
-           ...
-   ```
-3. In `app/api/deps.py`:
-   - Set `USE_STUB_MODEL=false` in `.env`
-   - Point `get_detector()` to instantiate your real model.
+### Architecture
+- `app/pipeline/interface.py` — `BaseDetector` ABC and `DetectionResult` dataclass (with sonar telemetry fields)
+- `app/pipeline/yolo_detector.py` — `YoloDetector` (real inference + geo/acoustic derivation)
+- `app/pipeline/stub_detector.py` — `StubDetector` (deterministic fakes for offline dev)
+- `app/api/deps.py` — `get_detector()` switches based on `USE_STUB_MODEL`
+
+Each detection includes: class, confidence, normalised bbox, **plus** side (port/starboard), ground range, depth, lat/lon, echo/shadow lengths, estimated height, survey line, and ping number.
 
 ---
 

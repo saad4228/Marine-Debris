@@ -49,11 +49,20 @@ function seqIcon(n) {
 
 function FitOnce({ points }) {
   const map = useMap();
-  const done = useRef(false);
+  const lastKey = useRef('');
   useEffect(() => {
-    if (done.current || !points.length) return;
-    done.current = true;
-    map.fitBounds(L.latLngBounds(points), { padding: [40, 40] });
+    if (!points || !points.length) return;
+    const key = `${points.length}_${points[0]?.[0] || 0}_${points[0]?.[1] || 0}`;
+    if (lastKey.current === key) return;
+    lastKey.current = key;
+    try {
+      const bounds = L.latLngBounds(points);
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+      }
+    } catch {
+      // ignore
+    }
   }, [map, points]);
   return null;
 }
@@ -124,9 +133,9 @@ function CurrentLayer({ hours }) {
 
 function DriftLayer({ records, hours, selectedId }) {
   return records.map((r) => {
-    if (hours <= 0 || r.track.length < 2) return null;
+    if (hours <= 0 || !r.track || r.track.length < 2) return null;
     const pts = r.track.slice(0, hours + 1).map((p) => [p.lat, p.lon]);
-    const end = r.track[Math.min(hours, r.track.length - 1)];
+    const end = r.track[Math.min(hours, r.track.length - 1)] || { spreadM: 0, lat: r.lat, lon: r.lon };
     const sel = r.id === selectedId;
     const nodes = [];
     for (let h = 6; h <= hours; h += 6) {
@@ -134,14 +143,14 @@ function DriftLayer({ records, hours, selectedId }) {
       if (p) nodes.push({ ...p });
     }
     return (
-      <g key={r.id}>
+      <g key={`drift-${r.id}`}>
         <Polyline positions={pts} pathOptions={{ color: '#f2a93b', weight: sel ? 2.2 : 1.4, dashArray: '4 7', opacity: sel ? 0.95 : 0.6 }} interactive={false} />
         {nodes.map((n) => (
           <CircleMarker key={n.hours} center={[n.lat, n.lon]} radius={sel ? 3.5 : 2.5} pathOptions={{ color: '#f2a93b', weight: 1.2, fillColor: '#03070c', fillOpacity: 1 }}>
             <Tooltip direction="top">+{n.hours} h</Tooltip>
           </CircleMarker>
         ))}
-        {end.spreadM > 0 && (
+        {end && end.spreadM > 0 && (
           <Circle center={[end.lat, end.lon]} radius={end.spreadM} pathOptions={{ color: '#f2a93b', weight: 0.8, opacity: 0.5, fillColor: '#f2a93b', fillOpacity: sel ? 0.12 : 0.06 }} interactive={false} />
         )}
       </g>
@@ -165,23 +174,36 @@ function RouteLayer({ route }) {
 }
 
 function DebrisPopup({ r, hours }) {
-  const end = r.track[Math.min(hours, r.track.length - 1)];
+  const end = r.track?.[Math.min(hours, (r.track?.length || 1) - 1)] || { lat: r.lat, lon: r.lon, hours: 0 };
+  const dimsStr = Array.isArray(r.dims)
+    ? r.dims.join(' × ')
+    : typeof r.dims === 'object' && r.dims
+    ? `${Number(r.dims.length || 2.0).toFixed(1)} × ${Number(r.dims.width || 1.5).toFixed(1)} × ${Number(r.dims.height || 1.0).toFixed(1)}`
+    : '2.0 × 1.5 × 1.0';
+
+  const shadowVal = r.shadowM ?? r.shadow_len_m ?? 1.5;
+  const dispKm = r.risk?.displacementKm ?? 0;
+  const label = r.clsInfo?.label || r.cls || 'Debris';
+  const conf = typeof r.conf === 'number' ? r.conf : 0;
+
   return (
     <div className="min-w-56">
       <div className="flex items-baseline justify-between gap-4">
         <span className="font-display text-base font-black">{r.id}</span>
-        <TierBadge tier={r.risk.tier} score={r.risk.score} />
+        {r.risk?.tier && <TierBadge tier={r.risk.tier} score={r.risk.score} />}
       </div>
-      <p className="mt-1 font-display font-bold">{r.clsInfo.label} <span className="num text-ping">{r.conf.toFixed(2)}</span></p>
+      <p className="mt-1 font-display font-bold">
+        {label} <span className="num text-ping">{conf.toFixed(2)}</span>
+      </p>
       <dl className="readout mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-foamdim">
         <dt>now</dt><dd className="text-foam">{formatLatLon(r.lat, r.lon)}</dd>
         {hours > 0 && (<><dt>+{end.hours} h</dt><dd className="text-foam">{formatLatLon(end.lat, end.lon)}</dd></>)}
-        <dt>L×W×H</dt><dd className="text-foam">{r.dims.join(' × ')} m</dd>
-        <dt>shadow</dt><dd className="text-foam">{r.shadowM.toFixed(1)} m</dd>
-        <dt>weight</dt><dd className="text-foam">{formatKg(r.weightKg)} est.</dd>
-        <dt>drift</dt><dd className="text-foam">{r.risk.displacementKm.toFixed(2)} km</dd>
+        <dt>L×W×H</dt><dd className="text-foam">{dimsStr} m</dd>
+        <dt>shadow</dt><dd className="text-foam">{typeof shadowVal === 'number' ? shadowVal.toFixed(1) : shadowVal} m</dd>
+        <dt>weight</dt><dd className="text-foam">{formatKg(r.weightKg || 500)} est.</dd>
+        <dt>drift</dt><dd className="text-foam">{typeof dispKm === 'number' ? dispKm.toFixed(2) : '0.00'} km</dd>
       </dl>
-      {r.risk.hazardsHit.length > 0 && (
+      {r.risk?.hazardsHit?.length > 0 && (
         <p className="mt-2 text-xs text-foamdim">Hazards: {r.risk.hazardsHit.map((h) => h.name).join('; ')}</p>
       )}
       <Link to={`/detections/${r.id}`} className="readout mt-3 inline-block text-ping">open detail</Link>
@@ -192,7 +214,7 @@ function DebrisPopup({ r, hours }) {
 /* ---------- the map ---------- */
 
 export default function DebrisMap({
-  records,
+  records = [],
   hazards = [],
   hours = 48,
   selectedId,
@@ -204,13 +226,55 @@ export default function DebrisMap({
   className,
   zoomControl = true,
 }) {
-  const fitPoints = useMemo(() => {
-    const pts = records.map((r) => [r.lat, r.lon]);
-    if (port) pts.push([port.lat, port.lon]);
-    return pts;
-  }, [records, port]);
+  const validRecords = useMemo(() => {
+    return (records || []).filter(
+      (r) => r && typeof r.lat === 'number' && typeof r.lon === 'number' && !isNaN(r.lat) && !isNaN(r.lon)
+    );
+  }, [records]);
 
-  const selected = records.find((r) => r.id === selectedId) || null;
+  // Disperse overlapping coordinates in a small cluster circle so all targets are individually visible and clickable
+  const displayRecords = useMemo(() => {
+    const coordGroups = new Map();
+    for (const r of validRecords) {
+      const key = `${r.lat.toFixed(5)}_${r.lon.toFixed(5)}`;
+      if (!coordGroups.has(key)) coordGroups.set(key, []);
+      coordGroups.get(key).push(r);
+    }
+
+    const out = [];
+    for (const [, group] of coordGroups) {
+      if (group.length === 1) {
+        out.push({ ...group[0], displayLat: group[0].lat, displayLon: group[0].lon, clusterSize: 1, clusterIndex: 1 });
+      } else {
+        group.forEach((r, idx) => {
+          const angle = (idx / group.length) * 2 * Math.PI;
+          const radiusM = 12 + Math.min(10, group.length * 1.5); // 12-22m visual separation
+          const dLat = (radiusM * Math.cos(angle)) / 111111;
+          const dLon = (radiusM * Math.sin(angle)) / (111111 * Math.cos((r.lat * Math.PI) / 180));
+          out.push({
+            ...r,
+            displayLat: Number((r.lat + dLat).toFixed(6)),
+            displayLon: Number((r.lon + dLon).toFixed(6)),
+            clusterSize: group.length,
+            clusterIndex: idx + 1,
+          });
+        });
+      }
+    }
+    return out;
+  }, [validRecords]);
+
+  const fitPoints = useMemo(() => {
+    const pts = validRecords
+      .map((r) => [Number(r.lat), Number(r.lon)])
+      .filter(([lat, lon]) => !isNaN(lat) && !isNaN(lon) && (lat !== 0 || lon !== 0));
+
+    if (pts.length > 0) return pts;
+    if (port && port.lat && port.lon) return [[port.lat, port.lon]];
+    return [SITE.area.center];
+  }, [validRecords, port]);
+
+  const selected = validRecords.find((r) => r.id === selectedId) || null;
 
   return (
     <div className={cx('relative h-full w-full', className)}>
@@ -231,21 +295,28 @@ export default function DebrisMap({
 
         {layers.hazards && <HazardLayer hazards={hazards} />}
         {layers.currents && <CurrentLayer hours={hours} />}
-        {layers.drift && <DriftLayer records={records} hours={hours} selectedId={selectedId} />}
+        {layers.drift && <DriftLayer records={validRecords} hours={hours} selectedId={selectedId} />}
         {layers.route && <RouteLayer route={route} />}
 
-        {records.map((r) => (
-          <Marker
-            key={r.id}
-            position={[r.lat, r.lon]}
-            icon={debrisIcon(r.risk.tier.color, r.id === selectedId)}
-            eventHandlers={{ click: () => onSelect && onSelect(r.id) }}
-            zIndexOffset={r.id === selectedId ? 1000 : 0}
-          >
-            <Tooltip direction="top" offset={[0, -8]}>{r.id} · {r.clsInfo.label}</Tooltip>
-            <Popup><DebrisPopup r={r} hours={hours} /></Popup>
-          </Marker>
-        ))}
+        {displayRecords.map((r) => {
+          const tierColor = r.risk?.tier?.color || '#8fd8db';
+          const label = r.clsInfo?.label || r.cls || 'Debris';
+          const clusterNote = r.clusterSize > 1 ? ` (${r.clusterIndex}/${r.clusterSize} at site)` : '';
+          return (
+            <Marker
+              key={r.id}
+              position={[r.displayLat, r.displayLon]}
+              icon={debrisIcon(tierColor, r.id === selectedId)}
+              eventHandlers={{ click: () => onSelect && onSelect(r.id) }}
+              zIndexOffset={r.id === selectedId ? 1000 : 0}
+            >
+              <Tooltip direction="top" offset={[0, -8]}>
+                {r.id} · {label}{clusterNote}
+              </Tooltip>
+              <Popup><DebrisPopup r={r} hours={hours} /></Popup>
+            </Marker>
+          );
+        })}
 
         {port && (
           <Marker

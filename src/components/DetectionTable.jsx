@@ -5,17 +5,17 @@ import { formatKg, cx } from '../lib/utils.js';
 
 const COLUMNS = [
   { key: 'id', label: 'Debris ID', get: (r) => r.id },
-  { key: 'cls', label: 'Class', get: (r) => r.clsInfo.label },
-  { key: 'conf', label: 'Conf.', get: (r) => r.conf, num: true, fmt: (v) => v.toFixed(2) },
-  { key: 'lat', label: 'Lat', get: (r) => r.lat, num: true, fmt: (v) => v.toFixed(4) },
-  { key: 'lon', label: 'Lon', get: (r) => r.lon, num: true, fmt: (v) => v.toFixed(4) },
-  { key: 'L', label: 'L (m)', get: (r) => r.dims[0], num: true, fmt: (v) => v.toFixed(1) },
-  { key: 'W', label: 'W (m)', get: (r) => r.dims[1], num: true, fmt: (v) => v.toFixed(1) },
-  { key: 'H', label: 'H (m)', get: (r) => r.dims[2], num: true, fmt: (v) => v.toFixed(1) },
-  { key: 'shadow', label: 'Shadow (m)', get: (r) => r.shadowM, num: true, fmt: (v) => v.toFixed(1) },
-  { key: 'weight', label: 'Est. weight', get: (r) => r.weightKg, num: true, fmt: formatKg },
-  { key: 'score', label: 'Risk', get: (r) => r.risk.score, num: true, fmt: (v) => String(v) },
-  { key: 'tier', label: 'Priority', get: (r) => r.risk.score },
+  { key: 'cls', label: 'Class', get: (r) => r.clsInfo?.label || r.cls },
+  { key: 'conf', label: 'Conf.', get: (r) => Number(r.conf ?? 0), num: true, fmt: (v) => Number(v).toFixed(2) },
+  { key: 'lat', label: 'Lat', get: (r) => Number(r.lat ?? 0), num: true, fmt: (v) => Number(v).toFixed(4) },
+  { key: 'lon', label: 'Lon', get: (r) => Number(r.lon ?? 0), num: true, fmt: (v) => Number(v).toFixed(4) },
+  { key: 'L', label: 'L (m)', get: (r) => Array.isArray(r.dims) ? r.dims[0] : Number(r.dims?.length ?? r.echo_len_m ?? 2.4), num: true, fmt: (v) => Number(v).toFixed(1) },
+  { key: 'W', label: 'W (m)', get: (r) => Array.isArray(r.dims) ? r.dims[1] : Number(r.dims?.width ?? 1.5), num: true, fmt: (v) => Number(v).toFixed(1) },
+  { key: 'H', label: 'H (m)', get: (r) => Array.isArray(r.dims) ? r.dims[2] : Number(r.dims?.height ?? r.height_est_m ?? 1.2), num: true, fmt: (v) => Number(v).toFixed(1) },
+  { key: 'shadow', label: 'Shadow (m)', get: (r) => Number(r.shadow_len_m ?? r.shadowM ?? 2.0), num: true, fmt: (v) => Number(v).toFixed(1) },
+  { key: 'weight', label: 'Est. weight', get: (r) => Number(r.weightKg ?? 500), num: true, fmt: formatKg },
+  { key: 'score', label: 'Risk', get: (r) => Number(r.risk?.score ?? 50), num: true, fmt: (v) => String(Math.round(v)) },
+  { key: 'tier', label: 'Priority', get: (r) => Number(r.risk?.score ?? 50) },
 ];
 
 export default function DetectionTable({ records, selectedId, onSelect, className, dense = false }) {
