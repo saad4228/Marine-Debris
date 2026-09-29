@@ -9,9 +9,19 @@ venv/
 env/
 .env
 nadir.db
+nadir.db.bak-*
 storage/uploads/*
 storage/tiles/*
 storage/exports/*
 !storage/**/.gitkeep
 *.log
 .DS_Store
+
+# Model weights — far larger than GitHub's 100 MB per-file limit.
+# Distribute new.zip out of band; yolo_detector unpacks it to new.pt on first use.
+*.pt
+new.zip
+best.zip
+
+# Local survey/input data — keep out of Git
+storage/XTFFiles/

@@ -27,7 +27,7 @@ export const SITE = {
 
   // Survey area and home port. TODO: replace with your real survey.
   area: {
-    name: 'Off Mormugao, Goa',
+    name: 'Survey Area',
     center: [15.42, 73.74],
     zoom: 12,
     port: { name: 'Mormugao harbour', lat: 15.411, lon: 73.803 },
@@ -301,6 +301,9 @@ export const SITE = {
   ],
 };
 
+// The classes users can filter by: canonical entries only, no spelling aliases.
+export const CLASS_FILTERS = SITE.classes.filter((c) => !c.aliasOf);
+
 // API configuration.
 // mode: 'mock' runs everything in the browser from seeded random numbers.
 // mode: 'live' calls baseUrl + the endpoints below.
@@ -309,6 +312,7 @@ export const API = {
   baseUrl: '/api/v1',
   endpoints: {
     detect: '/detect',          // POST multipart "image" → { detections: [{cls, conf, x, y, w, h}] }
+    xtfUpload: '/xtf/upload',   // POST multipart "file" → full XTF slicing, inference, and DB sync
     forecast: '/forecast',      // GET /forecast/:id?hours=48 → { track: [{lat, lon, hours}] }
     risk: '/risk',              // GET /risk/:id → { score, tier, factors: [{key, label, value, weight}] }
     hazards: '/hazards',        // GET /hazards → { hazards: [...] }

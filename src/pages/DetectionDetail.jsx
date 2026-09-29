@@ -1,7 +1,8 @@
 import { Link, useParams } from 'react-router-dom';
 import { useRecords } from '../lib/useRecords.js';
 import { formatLatLon } from '../lib/geo.js';
-import { formatKg } from '../lib/utils.js';
+import { formatKg, formatDims } from '../lib/utils.js';
+import { ENABLE_DRIFT_PHYSICS } from '../lib/drift.js';
 import SurfaceBand from '../components/SurfaceBand.jsx';
 import SonarTile from '../components/SonarTile.jsx';
 import TierBadge from '../components/TierBadge.jsx';
@@ -27,21 +28,28 @@ export default function DetectionDetail() {
 
   const prev = records[index - 1];
   const next = records[index + 1];
-  const nodes = [6, 12, 24, 48].map((h) => r.track[h]).filter(Boolean);
+  const rangeVal = r.range_m ?? r.rangeM ?? r.range ?? 25.0;
+  const shadowVal = r.shadow_len_m ?? r.shadowM ?? 1.5;
+  const depthVal = r.depth_m ?? r.depthM ?? r.depth ?? 30.0;
+  const dateStr = r.detectedAt || r.created_at ? new Date(r.detectedAt || r.created_at).toUTCString() : 'Live Survey Ingested';
+
+  const dimsStr = formatDims(r.dims);
+
+  const nodes = (r.track || []).filter((n) => n.hours > 0 && n.hours % 6 === 0);
 
   const specs = [
-    ['Class', r.clsInfo.label],
-    ['Confidence', <span key="confidence" className="readout-md text-ping">{r.conf.toFixed(2)}</span>],
-    ['Status', r.status],
-    ['Priority', <TierBadge key="priority" tier={r.risk.tier} score={r.risk.score} />],
+    ['Class', r.clsInfo?.label || r.cls],
+    ['Confidence', <span key="confidence" className="readout-md text-ping">{(r.conf || 0).toFixed(2)}</span>],
+    ['Status', r.status || 'Candidate'],
+    ['Priority', r.risk?.tier ? <TierBadge key="priority" tier={r.risk.tier} score={r.risk.score} /> : 'Candidate'],
     ['Survey line / ping', <span key="line" className="readout-md">{r.line} · {r.ping}</span>],
-    ['Side / ground range', <span key="range" className="readout-md">{r.side} · {r.rangeM.toFixed(1)} m</span>],
-    ['Water depth', <span key="depth" className="readout-md">{r.depthM} m</span>],
-    ['Position', <span key="position" className="readout-md">{formatLatLon(r.lat, r.lon)}</span>],
-    ['L × W × H', <span key="dimensions" className="readout-md">{r.dims.map((v) => v.toFixed(1)).join(' × ')} m</span>],
-    ['Shadow length', <span key="shadow" className="readout-md">{r.shadowM.toFixed(1)} m</span>],
-    ['Estimated weight', <span key="weight" className="readout-md">{formatKg(r.weightKg)}</span>],
-    ['Detected', <span key="detected" className="readout-md">{new Date(r.detectedAt).toUTCString()}</span>],
+    ['Side / ground range', <span key="range" className="readout-md capitalize">{r.side} · {Number(rangeVal).toFixed(1)} m</span>],
+    ['Water depth', <span key="depth" className="readout-md">{depthVal} m</span>],
+    ['Position (GPS)', <span key="position" className="readout-md text-sun font-bold">{formatLatLon(r.lat, r.lon)}</span>],
+    ['L × W × H', <span key="dimensions" className="readout-md">{dimsStr} m</span>],
+    ['Shadow length', <span key="shadow" className="readout-md">{Number(shadowVal).toFixed(1)} m</span>],
+    ['Estimated weight', <span key="weight" className="readout-md">{formatKg(r.weightKg || 500)}</span>],
+    ['Detected timestamp', <span key="detected" className="readout-md">{dateStr}</span>],
   ];
 
   return (
@@ -55,7 +63,7 @@ export default function DetectionDetail() {
             <h1 className="h-page text-shadow-deep">{r.clsInfo.label}</h1>
             <p className="readout mt-3 text-foamdim">{r.id}</p>
             <div className="mt-8 border hairline">
-              <SonarTile seed={r.id} targets={[r.tile]} showBox label={`${r.cls.toUpperCase()} ${r.conf.toFixed(2)}`} aspect={0.68} />
+              <SonarTile tileUrl={r.tileUrl} seed={r.id} targets={[r.tile]} showBox label={`${r.cls.toUpperCase()} ${r.conf.toFixed(2)}`} aspect={0.68} />
             </div>
             <p className="mt-3 text-sm text-foamdim">Tile rendered from the detection id. The shadow falls to {r.side}, away from the nadir.</p>
 
@@ -71,7 +79,11 @@ export default function DetectionDetail() {
                 ))}
               </tbody>
             </table>
-            <p className="mt-2 text-sm text-foamdim">Displacement over 48 h: {r.risk.displacementKm.toFixed(2)} km. {r.risk.displacementKm < 0.05 ? 'Below the mobility threshold for this class: expected to stay put.' : ''}</p>
+            <p className="mt-2 text-sm text-foamdim">
+              {ENABLE_DRIFT_PHYSICS
+                ? `Displacement over 48 h: ${r.risk.displacementKm.toFixed(2)} km. ${r.risk.displacementKm < 0.05 ? 'Below the mobility threshold for this class: expected to stay put.' : ''}`
+                : 'Drift physics is bypassed for this prototype: targets remain stationary at the surveyed sonar fix.'}
+            </p>
             <Link to={`/map?sel=${r.id}`} className="btn btn-ghost btn-sm mt-4">Open on the full map</Link>
           </div>
 

@@ -46,11 +46,18 @@ async def get_stats(db: AsyncSession) -> StatsResponse:
 async def export_geojson(
     db: AsyncSession,
     only_confirmed: bool = False,
+    cls: str | None = None,
 ) -> GeoJSONFeatureCollection:
-    """Generate GeoJSON FeatureCollection for detections with valid coordinates."""
+    """Generate GeoJSON FeatureCollection for detections with valid coordinates.
+
+    Detections with no navigation fix cannot be given a geometry and are excluded.
+    """
     query = select(Detection).where(Detection.lat.is_not(None), Detection.lon.is_not(None))
     if only_confirmed:
         query = query.where(Detection.status == "Confirmed by review")
+    # Same convention as detection_service.list_detections: "all" means no filter.
+    if cls and cls != "all":
+        query = query.where(Detection.cls == cls)
 
     result = await db.execute(query)
     detections = result.scalars().all()
@@ -76,9 +83,13 @@ async def export_geojson(
     return GeoJSONFeatureCollection(type="FeatureCollection", features=features)
 
 
-async def export_csv(db: AsyncSession) -> str:
+async def export_csv(db: AsyncSession, cls: str | None = None) -> str:
     """Generate CSV review sheet formatted string."""
-    query = select(Detection).order_by(Detection.created_at.desc())
+    query = select(Detection)
+    # Same convention as detection_service.list_detections: "all" means no filter.
+    if cls and cls != "all":
+        query = query.where(Detection.cls == cls)
+    query = query.order_by(Detection.created_at.desc())
     result = await db.execute(query)
     detections = result.scalars().all()
 
