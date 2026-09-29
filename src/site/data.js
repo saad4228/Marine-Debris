@@ -309,13 +309,13 @@ export const CLASS_FILTERS = SITE.classes.filter((c) => !c.aliasOf);
 // mode: 'live' calls baseUrl + the endpoints below.
 export const API = {
   mode: 'live',
-  baseUrl: '/api/v1',
+  baseUrl: import.meta.env.VITE_API_URL || '/api/v1',
   endpoints: {
-    detect: '/detect',          // POST multipart "image" → { detections: [{cls, conf, x, y, w, h}] }
-    xtfUpload: '/xtf/upload',   // POST multipart "file" → full XTF slicing, inference, and DB sync
-    forecast: '/forecast',      // GET /forecast/:id?hours=48 → { track: [{lat, lon, hours}] }
-    risk: '/risk',              // GET /risk/:id → { score, tier, factors: [{key, label, value, weight}] }
-    hazards: '/hazards',        // GET /hazards → { hazards: [...] }
-    mission: '/mission',        // POST { start, ids, hours } → { order, legsNm, totalNm, hours, fuelL }
+    detect: '/detect',
+    xtfUpload: '/xtf/upload',
+    forecast: '/forecast',
+    risk: '/risk',
+    hazards: '/hazards',
+    mission: '/mission',
   },
 };
