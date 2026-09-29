@@ -12,6 +12,11 @@
 import { destination, pointInPolygon } from './geo.js';
 import { rngFor } from './utils.js';
 
+// Toggle for drifting physics simulation in the prototype.
+// Set to false to bypass drifting physics: detections remain stationary at surveyed sonar coordinates.
+// The complete advection physics algorithms are preserved below and can be re-enabled at any time.
+export const ENABLE_DRIFT_PHYSICS = true;
+
 const TIDAL_PERIOD_H = 12.42;
 
 // Build a deterministic field for the survey area from a seed.
@@ -25,10 +30,10 @@ export function makeCurrentField(seed, center) {
   }));
   return {
     // TODO: replace with real forecast fields
-    baseSpeed: 0.22, // m/s, residual monsoon current
-    baseBearing: 205, // toward SSW
-    tidalAmp: 0.28, // m/s
-    tidalBearing: 300, // ebb direction
+    baseSpeed: 0.08, // gentle m/s, minimal drift
+    baseBearing: 180, // toward South
+    tidalAmp: 0.04, // reduced m/s
+    tidalBearing: 180, // ebb direction
     eddies,
   };
 }
@@ -67,9 +72,9 @@ export function currentAt(field, p, tHours, hazards = []) {
 
 // Wind (m/s, bearing the wind blows TOWARD).
 export function windAt(tHours) {
-  // TODO: replace with Open-Meteo 10 m wind
-  const speed = 4.5 + 1.5 * Math.sin(tHours / 9);
-  const bearing = 235 + 12 * Math.sin(tHours / 15);
+  // Minimal wind blowing south
+  const speed = 2.0 + 0.5 * Math.sin(tHours / 9);
+  const bearing = 180 + 5 * Math.sin(tHours / 15);
   return { speed, bearing };
 }
 
@@ -82,17 +87,31 @@ function depthAttenuation(depthM) {
 
 // Critical current speed (m/s) below which the object stays put.
 function criticalSpeed(cls) {
-  return 0.55 * (1 - cls.mobility) + 0.05;
+  // Lowered critical speed threshold so even heavy items (like crab pots) drift slightly
+  return 0.10 * (1 - cls.mobility) + 0.01;
 }
 
 /**
  * Forecast a track for one detection.
+ * If ENABLE_DRIFT_PHYSICS is false, the drifting physics is bypassed:
+ * the target coordinates remain static at the initial sonar fix.
+ *
  * @param det   detection { lat, lon, depthM, dims }
  * @param cls   class prior { mobility, windage }
  * @param hours horizon (6..48)
  * @param env   { field, hazards }
  */
 export function forecastTrack(det, cls, hours, env) {
+  // Prototype bypass: when drift physics is disabled, coordinates stay anchored at surveyed fix
+  if (!ENABLE_DRIFT_PHYSICS) {
+    const pts = [];
+    for (let h = 0; h <= hours; h++) {
+      pts.push({ lat: det.lat, lon: det.lon, hours: h, spreadM: 0 });
+    }
+    return pts;
+  }
+
+  // --- Full Lagrangian advection drift physics (retained for production / when enabled) ---
   const pts = [{ lat: det.lat, lon: det.lon, hours: 0, spreadM: 0 }];
   let p = { lat: det.lat, lon: det.lon };
   const att = depthAttenuation(det.depthM || 40);
@@ -128,7 +147,8 @@ export function forecastTrack(det, cls, hours, env) {
 }
 
 export function trackDisplacementKm(track) {
-  if (track.length < 2) return 0;
+  if (!ENABLE_DRIFT_PHYSICS) return 0;
+  if (!track || track.length < 2) return 0;
   const a = track[0];
   const b = track[track.length - 1];
   const kx = Math.cos((a.lat * Math.PI) / 180) * 111.32;

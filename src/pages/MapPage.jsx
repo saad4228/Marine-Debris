@@ -1,23 +1,47 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { SITE } from '../site/data.js';
+import { SITE, CLASS_FILTERS } from '../site/data.js';
 import { api } from '../site/api.js';
 import { useRecords } from '../lib/useRecords.js';
 import { TIERS } from '../lib/risk.js';
 import { cx } from '../lib/utils.js';
 import DebrisMap from '../components/DebrisMap.jsx';
 import MapSidebar from '../components/MapSidebar.jsx';
+import { planRoute } from '../lib/route.js';
 
 export default function MapPage() {
   const [params, setParams] = useSearchParams();
   const [hours, setHours] = useState(24);
   const { records, hazards, loading, error } = useRecords(hours);
   const [selectedId, setSelectedId] = useState(params.get('sel'));
-  const [filters, setFilters] = useState({ tiers: new Set(TIERS.map((t) => t.id)), classes: new Set(SITE.classes.map((c) => c.id)), minConf: 0 });
+  const [filters, setFilters] = useState({ tiers: new Set(TIERS.map((t) => t.id)), classes: new Set(CLASS_FILTERS.map((c) => c.id)), minConf: 0 });
   const [layers, setLayers] = useState({ drift: true, hazards: true, currents: false, seamarks: false, route: true });
   const [port, setPort] = useState(SITE.area.port);
   const [mission, setMission] = useState({ running: false, route: null, error: null });
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Dynamically position recovery base port near survey centroid if records are far from default port
+  useEffect(() => {
+    if (records && records.length > 0) {
+      const first = records[0];
+      const dLat = Math.abs(first.lat - port.lat);
+      const dLon = Math.abs(first.lon - port.lon);
+      if (dLat > 2 || dLon > 2) {
+        setPort({
+          name: `${first.line || 'Survey'} Staging Port`,
+          lat: Number((first.lat + 0.015).toFixed(4)),
+          lon: Number((first.lon + 0.015).toFixed(4)),
+        });
+      }
+    }
+  }, [records]);
+
+  const surveyAreaName = useMemo(() => {
+    if (records && records.length > 0) {
+      return `${records[0].line || 'Live'} Survey Zone (${records.length} targets)`;
+    }
+    return SITE.area.name;
+  }, [records]);
 
   useEffect(() => {
     if (selectedId) setParams({ sel: selectedId }, { replace: true });
@@ -37,7 +61,18 @@ export default function MapPage() {
       const route = await api.mission({ start: { ...port, id: 'PORT' }, ids, hours });
       setMission({ running: false, route, error: null });
     } catch (e) {
-      setMission({ running: false, route: null, error: `The planner did not answer: ${e.message}. Check the mission endpoint, or set API.mode to "mock".` });
+      try {
+        const targets = ids.map((id) => {
+          const r = records.find(x => x.id === id);
+          if (!r) throw new Error(`No record for ${id}`);
+          const p = hours > 0 ? (r.forecastEnd || r) : r;
+          return { id, lat: p.lat, lon: p.lon, tier: r.risk?.tier?.id, cls: r.cls };
+        }).filter(r => r.lat != null && r.lon != null);
+        const route = planRoute({ ...port, id: 'PORT' }, targets, SITE.vessel, { returnToStart: true });
+        setMission({ running: false, route, error: null });
+      } catch (fallbackErr) {
+        setMission({ running: false, route: null, error: `The planner did not answer: ${e.message}. Fallback also failed: ${fallbackErr.message}` });
+      }
     }
   }
 
@@ -46,7 +81,7 @@ export default function MapPage() {
       <header className="flex items-center justify-between gap-4 border-b hairline px-4 py-2">
         <div className="flex items-baseline gap-4">
           <Link to="/" className="font-display text-lg font-black text-foam no-underline">{SITE.name}</Link>
-          <span className="readout hidden text-foamdim sm:inline">marine debris & hazard chart · {SITE.area.name}</span>
+          <span className="readout hidden text-foamdim sm:inline">marine debris & hazard chart · {surveyAreaName}</span>
         </div>
         <div className="flex items-center gap-2">
           <Link to="/detections" className="btn btn-ghost btn-sm">Detections</Link>
@@ -83,7 +118,7 @@ export default function MapPage() {
           {!loading && !error && (
             <div className="pointer-events-none absolute left-4 top-4 z-[500] hidden sm:flex items-center gap-3 border hairline bg-abyss/85 px-3 py-1.5 text-xs shadow-xl backdrop-blur-md">
               <span className="h-2 w-2 rounded-full bg-ping animate-pulse" />
-              <span className="font-display font-bold text-foam">{SITE.area.name}</span>
+              <span className="font-display font-bold text-foam">{surveyAreaName}</span>
               <span className="readout text-foamdim">·</span>
               <span className="readout text-foamdim">{visible.length} targets active</span>
             </div>

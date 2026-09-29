@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { SITE } from '../site/data.js';
+import { SITE, CLASS_FILTERS } from '../site/data.js';
 import { api, isMock } from '../site/api.js';
 import { TIERS, HAZARD_KINDS } from '../lib/risk.js';
 import { formatHours, formatKg, cx } from '../lib/utils.js';
+import { ENABLE_DRIFT_PHYSICS } from '../lib/drift.js';
 import TierBadge from './TierBadge.jsx';
 
 function Toggle({ checked, onChange, children }) {
@@ -193,7 +194,11 @@ export default function MapSidebar({
                       </div>
                       <div className="readout mt-1 flex items-center justify-between text-[11px] text-foamdim">
                         <span>conf {r.conf.toFixed(2)} · {formatKg(r.weightKg)}</span>
-                        <span className="text-ping">drift {r.risk.displacementKm.toFixed(2)} km</span>
+                        {ENABLE_DRIFT_PHYSICS ? (
+                          <span className="text-ping">drift {r.risk.displacementKm.toFixed(2)} km</span>
+                        ) : (
+                          <span className="text-foamdim font-mono">stationary</span>
+                        )}
                       </div>
                     </button>
                   </li>
@@ -321,7 +326,12 @@ export default function MapSidebar({
               <p className="font-display text-xs font-bold uppercase tracking-wider text-foamdim">Map Layer Overlays</p>
               <div className="mt-2 divide-y hairline border-y hairline">
                 <Toggle checked={layers.drift} onChange={(v) => setLayers((l) => ({ ...l, drift: v }))}>
-                  Drift tracks (dotted 6 h nodes)
+                  <span>
+                    Drift tracks (dotted 6 h nodes)
+                    {!ENABLE_DRIFT_PHYSICS && (
+                      <span className="ml-1 text-[10px] text-foamdim font-mono">(bypassed)</span>
+                    )}
+                  </span>
                 </Toggle>
                 <Toggle checked={layers.hazards} onChange={(v) => setLayers((l) => ({ ...l, hazards: v }))}>
                   Hazard zones (marine parks & lanes)
@@ -357,19 +367,46 @@ export default function MapSidebar({
             </div>
 
             <div>
-              <p className="font-display text-xs font-bold uppercase tracking-wider text-foamdim">Target Classes</p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {SITE.classes.map((c) => (
+              <div className="flex items-baseline justify-between mb-1.5">
+                <p className="font-display text-xs font-bold uppercase tracking-wider text-foamdim">Target Classes to Include</p>
+                <div className="flex gap-2">
                   <button
-                    key={c.id}
                     type="button"
-                    className="chip text-xs"
-                    aria-pressed={filters.classes.has(c.id)}
-                    onClick={() => toggleSet('classes', c.id)}
+                    className="readout text-[10px] text-ping hover:text-foam underline cursor-pointer"
+                    onClick={() =>
+                      setFilters((f) => ({ ...f, classes: new Set(CLASS_FILTERS.map((c) => c.id)) }))
+                    }
                   >
-                    {c.label}
+                    All
                   </button>
-                ))}
+                  <span className="text-foamdim text-[10px]">·</span>
+                  <button
+                    type="button"
+                    className="readout text-[10px] text-ping hover:text-foam underline cursor-pointer"
+                    onClick={() => setFilters((f) => ({ ...f, classes: new Set() }))}
+                  >
+                    None
+                  </button>
+                </div>
+              </div>
+              <div className="mt-1 space-y-0.5 border hairline bg-abyss/60 px-2 py-1.5 max-h-48 overflow-y-auto">
+                {CLASS_FILTERS.map((c) => {
+                  const checked = filters.classes.has(c.id);
+                  return (
+                    <label
+                      key={c.id}
+                      className="flex items-center gap-2 cursor-pointer py-0.5 text-xs hover:text-foam group"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleSet('classes', c.id)}
+                        className="h-3.5 w-3.5 accent-[#f2a93b] cursor-pointer"
+                      />
+                      <span className={checked ? 'text-foam' : 'text-foamdim'}>{c.label}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 

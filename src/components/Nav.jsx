@@ -24,7 +24,6 @@ export default function Nav() {
       >
         <Link to="/" className="font-display text-xl font-black tracking-tight text-foam no-underline flex items-baseline">
           {SITE.name}
-          <span className="readout ml-3 hidden text-foamdim sm:inline">{SITE.problemStatement}</span>
           {isMock && <span className="readout ml-3 hidden text-ping md:inline">mock data</span>}
         </Link>
         <ul className="flex flex-wrap items-baseline gap-x-6 gap-y-2">

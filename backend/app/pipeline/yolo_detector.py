@@ -1,13 +1,14 @@
 """YOLO detector implementation for side-scan sonar marine debris detection.
 
-Loads trained Ultralytics YOLO weights (e.g. best.pt / best.zip) and derives
-normalized bounding boxes, class labels, sonar geometry (port/starboard, ground range),
-acoustic dimensions (echo, shadow, height), and georeferenced coordinates.
+Loads trained Ultralytics YOLO weights (shipped as new.zip, unpacked to new.pt on first
+use) and derives normalized bounding boxes, class labels, sonar geometry (port/starboard,
+ground range), acoustic dimensions (echo, shadow, height), and georeferenced coordinates.
 """
 
 import io
 import logging
-import os
+import shutil
+import zipfile
 from pathlib import Path
 from PIL import Image
 
@@ -40,50 +41,86 @@ class YoloDetector(BaseDetector):
 
     def __init__(
         self,
-        weights_path: str = "best.pt",
+        weights_path: str = "new.pt",
         conf_threshold: float = 0.25,
         swath_range_m: float = 60.0,
-        base_lat: float = 15.4150,
-        base_lon: float = 73.7250,
         base_depth_m: float = 38.0,
     ):
         self.weights_path = weights_path
         self.conf_threshold = conf_threshold
         self.swath_range_m = swath_range_m
-        self.base_lat = base_lat
-        self.base_lon = base_lon
         self.base_depth_m = base_depth_m
         self._model = None
+
+    def _resolve_weights(self) -> Path:
+        """Locate the weights file, unpacking a zipped checkpoint if that is all we have.
+
+        Weights are distributed as a zip archive (they are far too large for git), so a
+        fresh clone has only ``new.zip`` and no ``.pt``. Two archive shapes are handled:
+
+        * a real zip containing a ``.pt`` member — extracted once, next to the archive
+        * a bare torch checkpoint that merely carries a ``.zip`` extension — ``torch.save``
+          writes zip-format files, so these load directly with no extraction
+
+        The extracted file is cached on disk, so this cost is paid once per deployment.
+        """
+        resolved = Path(self.weights_path)
+        if not resolved.is_absolute():
+            candidate = Path(__file__).resolve().parent.parent.parent / self.weights_path
+            if candidate.exists():
+                return candidate
+            resolved = candidate
+
+        if resolved.is_file():
+            return resolved
+
+        # No .pt on disk — look for the archive it ships in.
+        archive = resolved.with_suffix(".zip")
+        if not archive.is_file():
+            return resolved
+
+        if not zipfile.is_zipfile(archive):
+            return resolved
+
+        with zipfile.ZipFile(archive) as zf:
+            # __MACOSX/* holds resource forks from archives made on macOS, never weights.
+            members = [
+                m for m in zf.infolist()
+                if m.filename.endswith(".pt") and not m.filename.startswith("__MACOSX")
+            ]
+            if not members:
+                # A torch checkpoint saved directly as .zip: hand it to YOLO as-is.
+                logger.info("Loading weights straight from torch-format archive %s", archive)
+                return archive
+
+            member = members[0]
+            logger.info("Extracting %s from %s -> %s", member.filename, archive.name, resolved)
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, open(resolved, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+        return resolved
 
     def _get_model(self):
         """Lazy load the YOLO model."""
         if self._model is not None:
             return self._model
 
-        # Ensure weights file exists
-        resolved_path = Path(self.weights_path)
-        if not resolved_path.is_absolute():
-            # Check relative to backend directory or current file
-            candidate = Path(__file__).resolve().parent.parent.parent / self.weights_path
-            if candidate.exists():
-                resolved_path = candidate
+        resolved_path = self._resolve_weights()
 
-        # If best.pt doesn't exist but best.zip does, create symlink or copy
-        if not resolved_path.exists():
-            zip_candidate = resolved_path.with_suffix(".zip")
-            if not zip_candidate.exists():
-                zip_candidate = resolved_path.parent / "best.zip"
-            if zip_candidate.exists():
-                try:
-                    os.symlink(zip_candidate, resolved_path)
-                    logger.info("Symlinked %s -> %s", resolved_path, zip_candidate)
-                except Exception:
-                    resolved_path = zip_candidate
-
-        logger.info("Loading YOLO weights from: %s", resolved_path)
         from ultralytics import YOLO
 
-        self._model = YOLO(str(resolved_path))
+        if resolved_path.exists() and resolved_path.is_file() and resolved_path.stat().st_size > 100:
+            logger.info("Loading YOLO weights from: %s", resolved_path)
+            self._model = YOLO(str(resolved_path))
+        else:
+            logger.warning(
+                "Custom weights file '%s' not found or is empty. Falling back to default 'yolov8n.pt'. "
+                "Place new.zip (or an extracted new.pt) in backend/ to use the trained sonar weights.",
+                resolved_path,
+            )
+            self._model = YOLO("yolov8n.pt")
+
         logger.info(
             "YOLO model loaded successfully. Task: %s, Classes: %d",
             getattr(self._model, "task", "detect"),
@@ -140,11 +177,14 @@ class YoloDetector(BaseDetector):
                     altitude_m = max(5.0, depth_m * 0.25)
                     height_est_m = round((shadow_len_m * altitude_m) / (range_m + shadow_len_m), 2)
 
-                    # Georeferenced GPS coordinates
-                    lat = round(self.base_lat + cy * 0.035, 5)
-                    lon = round(self.base_lon + cx * 0.035, 5)
-                    ping = int(18000 + cy * 2500)
-                    line = "L07"
+                    # A standalone tile image carries no navigation, survey line or ping
+                    # number, so none are derivable here. They stay None and are filled in
+                    # by the XTF pipeline (which projects from the real vessel track) or by
+                    # an explicit caller-supplied override on /detect.
+                    lat = None
+                    lon = None
+                    ping = None
+                    line = None
 
                     note = (
                         f"Detected {cls_name} ({conf:.2f}) on {side} channel. "

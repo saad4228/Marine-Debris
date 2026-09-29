@@ -1,7 +1,21 @@
 """Pydantic schemas for detection request / response validation."""
 
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
+
+
+def detection_image_url(image_path: str | None) -> str | None:
+    """Public URL for a stored detection image, or None when there is no image.
+
+    The single source of truth for turning a stored path into a URL. Detection images
+    live under the StaticFiles mount at /storage (tiles under storage/tiles/..., single
+    uploads under storage/uploads/...), so the URL is just the stored relative path made
+    absolute. Anything that needs this URL must call this function rather than
+    re-deriving the layout, so a move to a CDN or signed URLs is a one-place change.
+    """
+    if not image_path:
+        return None
+    return f"/{str(image_path).lstrip('/')}"
 
 
 # ── Bounding box returned by the detector ─────────────────────────────────────
@@ -68,6 +82,18 @@ class DetectionResponse(BaseModel):
     image_path: str | None = None
     survey_id: int | None = None
     created_at: datetime | None = None
+
+    # A plain @property is NOT serialised by Pydantic v2, which is why this field was
+    # silently missing from every DetectionResponse the API returned. @computed_field
+    # puts it in the JSON, so list, single-fetch and review all emit an identical shape.
+    #
+    # Nullable by design: image_path is nullable in the DB and /detect leaves it None
+    # when the disk write fails, so a detection can genuinely have no image. The key is
+    # always present and is explicitly null in that case — never omitted.
+    @computed_field
+    @property
+    def image_url(self) -> str | None:
+        return detection_image_url(self.image_path)
 
     model_config = {"from_attributes": True}
 

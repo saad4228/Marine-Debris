@@ -7,8 +7,9 @@ export default function Team() {
       <SurfaceBand />
       <main className="relative z-10 mx-auto max-w-7xl px-6 pb-12 pt-24 md:pt-28 md:px-10">
         <header className="max-w-4xl">
-          <h1 className="h-page text-shadow-deep">Team</h1>
-          <p className="lede measure mt-6 text-foam">{SITE.teamName}, built for {SITE.event}, problem statement {SITE.problemStatement.replace('PS ', '')}.</p>
+          <p className="readout text-ping text-shadow-deep">{SITE.teamName}</p>
+          <h1 className="h-page mt-2 text-shadow-deep">Team</h1>
+          <p className="lede measure mt-6 text-foam">The six of us built {SITE.name} — the acoustic pipeline that turns raw sonar into corrected imagery, the detector that finds debris in it, and the interface that puts every target in front of a reviewer.</p>
         </header>
 
         <section className="mt-16">
@@ -26,8 +27,8 @@ export default function Team() {
         </section>
 
         <section className="mt-20">
-          <h2 className="text-3xl">Mentors and collaborators</h2>
-          <ul className="mt-6 grid gap-10 md:grid-cols-3">
+          <h2 className="text-3xl">Mentor</h2>
+          <ul className="mt-6 grid gap-10 md:grid-cols-2">
             {SITE.collaborators.map((c) => (
               <li key={c.name} className="rule-top pt-5">
                 <h3 className="text-xl">{c.name}</h3>
@@ -38,17 +39,6 @@ export default function Team() {
           </ul>
         </section>
 
-        <section className="mt-20 max-w-4xl">
-          <h2 className="text-3xl">Data sources</h2>
-          <dl className="mt-6 border-t hairline">
-            {SITE.dataSources.map((s) => (
-              <div key={s.name} className="grid gap-2 border-b hairline py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-                <dt className="font-display font-bold">{s.name}</dt>
-                <dd className="text-foamdim">{s.detail}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
       </main>
     </div>
   );

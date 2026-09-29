@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { SITE } from '../site/data.js';
+import { useRecords } from '../lib/useRecords.js';
 import { setProgress, snapProgress, resetProgress, MAX_DEPTH } from '../lib/scrollStore.js';
 import { lerp } from '../lib/utils.js';
 import DescentCanvas from '../components/DescentCanvas.jsx';
@@ -13,6 +14,22 @@ import SurveyDiagram from '../components/SurveyDiagram.jsx';
 const LEGEND_TARGET = [{ x: 0.7, y: 0.5, size: 0.075, shadow: 3 }];
 
 export default function Landing() {
+  const { records } = useRecords(48);
+
+  const metrics = useMemo(() => {
+    if (records && records.length > 0) {
+      const avgConf = (records.reduce((acc, r) => acc + (r.conf || 0), 0) / records.length).toFixed(2);
+      const uniqueClasses = new Set(records.map((r) => r.cls)).size;
+      return [
+        { value: String(records.length), label: 'Live targets indexed', unit: 'in database' },
+        { value: `${avgConf}`, label: 'Mean YOLO confidence', unit: 'score' },
+        { value: '48 h', label: 'Drift forecast horizon', unit: '6 h steps' },
+        { value: `${uniqueClasses}`, label: 'Debris classes detected', unit: 'categories' },
+      ];
+    }
+    return SITE.metrics;
+  }, [records]);
+
   useEffect(() => {
     let anchors = [];
     const computeAnchors = () => {
@@ -65,9 +82,8 @@ export default function Landing() {
           <h1 className="display-xl rise-in text-foam text-shadow-deep">{SITE.name}</h1>
           <p className="rise-in rise-in-2 mt-6 max-w-[28ch] font-body text-2xl italic text-sun text-shadow-deep md:text-3xl">{SITE.tagline}</p>
           <dl className="readout rise-in rise-in-3 mt-10 grid max-w-md grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-foamdim text-shadow-deep">
-            <dt>event</dt><dd className="text-foam">{SITE.event}</dd>
-            <dt>problem</dt><dd className="text-foam">{SITE.problemStatement}</dd>
             <dt>sensor</dt><dd className="text-foam">side-scan sonar · XTF</dd>
+            <dt>coverage</dt><dd className="text-foam">dual-channel swath · georeferenced</dd>
             <dt>outputs</dt><dd className="text-foam">position · drift · risk · route</dd>
           </dl>
           <div className="rise-in rise-in-4 mt-10 flex flex-wrap gap-3">
@@ -142,7 +158,7 @@ export default function Landing() {
           <h2 className="h-section measure text-shadow-deep">Seabed.</h2>
           <p className="measure mt-6 text-foam text-shadow-deep">Behind this text is the system&rsquo;s view of the world: a live side-scan waterfall, drawn ping by ping. What follows is what it found.</p>
           <dl className="mt-10 grid max-w-5xl grid-cols-2 border hairline md:grid-cols-4">
-            {SITE.metrics.map((m) => (
+            {metrics.map((m) => (
               <div key={m.label} className="border hairline p-5 md:p-6 text-shadow-deep">
                 <dd className="font-display text-4xl font-black leading-none tracking-tight md:text-5xl">{m.value}</dd>
                 <dt className="mt-3 text-sm text-foamdim">{m.label}{m.unit ? <span className="readout ml-2 text-ping">{m.unit}</span> : null}</dt>
@@ -158,7 +174,7 @@ export default function Landing() {
             ))}
           </div>
           <div className="mt-14 flex flex-wrap gap-3">
-            <Link to="/method" className="btn btn-solid">Read the method</Link>
+            <Link to="/detections" className="btn btn-solid">View all {records.length || 0} detections</Link>
             <Link to="/upload" className="btn btn-ghost">Open the workbench</Link>
           </div>
         </DepthSection>

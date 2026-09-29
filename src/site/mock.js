@@ -3,7 +3,7 @@
 
 import { SITE } from './data.js';
 import { makeCurrentField, forecastTrack, currentAt, windAt } from '../lib/drift.js';
-import { scoreRisk } from '../lib/risk.js';
+import { scoreRisk, scoreRiskWithoutPosition } from '../lib/risk.js';
 import { planRoute } from '../lib/route.js';
 import { classInfo, estimateWeightKg, rngFor, wait } from '../lib/utils.js';
 
@@ -19,9 +19,27 @@ function findDetection(id) {
 export function enrich(det, hours) {
   const cls = classInfo(SITE.classes, det.cls);
   const weightKg = estimateWeightKg(cls, det.dims);
+  const located = det.lat != null && det.lon != null;
+
+  // Drift and hazard exposure are both positional. Running them on an unlocated
+  // detection seeds the track with null and yields a NaN score that tierFor() would
+  // silently round down to the lowest tier. Score the position-independent factors
+  // instead and mark the rest unavailable, so the record still ranks and still renders.
+  if (!located) {
+    return {
+      ...det,
+      located: false,
+      clsInfo: cls,
+      weightKg,
+      track: [],
+      forecastEnd: null,
+      risk: scoreRiskWithoutPosition(cls, det.conf, weightKg),
+    };
+  }
+
   const track = forecastTrack(det, cls, hours, env);
   const risk = scoreRisk(det, cls, track, SITE.hazards, weightKg);
-  return { ...det, clsInfo: cls, weightKg, track, risk, forecastEnd: track[track.length - 1] };
+  return { ...det, located: true, clsInfo: cls, weightKg, track, risk, forecastEnd: track[track.length - 1] };
 }
 
 export const mock = {

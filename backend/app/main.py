@@ -2,8 +2,10 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_v1_router
 from app.config import settings
@@ -17,16 +19,19 @@ logger = logging.getLogger("nadir")
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     logger.info("Initializing NADIR backend...")
-    # Attempt to initialize tables (PostgreSQL)
+    # Ensure storage directories exist
+    Path("storage/tiles").mkdir(parents=True, exist_ok=True)
+    Path("storage/uploads").mkdir(parents=True, exist_ok=True)
+    Path("storage/exports").mkdir(parents=True, exist_ok=True)
+
+    # Attempt to initialize tables (PostgreSQL or local SQLite fallback)
     try:
         await create_tables()
-        logger.info("PostgreSQL database tables verified/created.")
+        logger.info("Database tables verified/created.")
     except Exception as e:
         logger.warning(
-            "Could not connect to PostgreSQL on startup (%s). Ensure PostgreSQL is running on %s. "
-            "Backend will continue in lightweight mode.",
+            "Could not connect to database on startup (%s). Backend will continue in lightweight mode.",
             e,
-            settings.DATABASE_URL,
         )
 
     yield
@@ -52,6 +57,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static file directory for serving extracted JPG tiles and uploads
+storage_path = Path("storage")
+storage_path.mkdir(parents=True, exist_ok=True)
+app.mount("/storage", StaticFiles(directory=str(storage_path)), name="storage")
 
 # Mount API v1 router
 app.include_router(api_v1_router)

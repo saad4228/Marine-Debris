@@ -42,6 +42,25 @@ async def persist_detections(
     detections: list[Detection] = []
 
     for r in results:
+        # Check if already present within 15m
+        if r.lat is not None and r.lon is not None:
+            lat_tol = 0.00015
+            lon_tol = 0.00015 / max(0.1, abs(r.lat) * 0.01745)
+            stmt = select(Detection).where(
+                Detection.cls == r.cls,
+                Detection.lat.between(r.lat - lat_tol, r.lat + lat_tol),
+                Detection.lon.between(r.lon - lon_tol, r.lon + lon_tol),
+            )
+            res = await db.execute(stmt)
+            existing = res.scalars().first()
+            if existing:
+                if r.conf > existing.conf:
+                    existing.conf = r.conf
+                    if image_path:
+                        existing.image_path = image_path
+                detections.append(existing)
+                continue
+
         det_id = await _unique_id(db)
         det = Detection(
             id=det_id,

@@ -2,8 +2,8 @@
 // Every factor is reported back so a reviewer can argue with it.
 
 import { distanceToPolygonKm } from './geo.js';
-import { trackDisplacementKm } from './drift.js';
-import { clamp } from './utils.js';
+import { trackDisplacementKm, ENABLE_DRIFT_PHYSICS } from './drift.js';
+import { clamp, formatDims } from './utils.js';
 
 export const TIERS = [
   { id: 'immediate', label: 'Immediate', min: 75, color: '#ff4d3d' },
@@ -77,20 +77,68 @@ export function scoreRisk(det, cls, track, hazards, weightKg) {
   if (hits.length > 1) hazardScore = clamp(hazardScore + 0.1 * (hits.length - 1));
   hits.sort((a, b) => b.exposure - a.exposure);
 
-  const massNorm = clamp(Math.log10(Math.max(1, weightKg)) / 3.5);
+  // weightKg is null when the target was never sized; score mass as 0 and say so
+  // rather than printing a mass that was never measured.
+  const massNorm = weightKg == null ? 0 : clamp(Math.log10(Math.max(1, weightKg)) / 3.5);
   const dispKm = trackDisplacementKm(track);
   const dispNorm = clamp(dispKm / 3);
+  const dimsStr = formatDims(det.dims);
 
   const factors = [
     { key: 'hazard', label: 'Hazard exposure', value: hazardScore, weight: WEIGHTS.hazard, detail: hits.length ? hits.map((h) => `${h.name} (${h.when})`).join('; ') : 'No hazard zone within 2.5 km of the track' },
     { key: 'severity', label: 'Debris severity', value: cls.severity, weight: WEIGHTS.severity, detail: `${cls.label} class prior` },
-    { key: 'confidence', label: 'Detection confidence', value: det.conf, weight: WEIGHTS.confidence, detail: `Model confidence ${det.conf.toFixed(2)}` },
-    { key: 'mass', label: 'Estimated mass', value: massNorm, weight: WEIGHTS.mass, detail: `${Math.round(weightKg)} kg estimated from ${det.dims.join(' × ')} m` },
+    { key: 'confidence', label: 'Detection confidence', value: det.conf, weight: WEIGHTS.confidence, detail: `Model confidence ${(det.conf || 0).toFixed(2)}` },
+    { key: 'mass', label: 'Estimated mass', value: massNorm, weight: WEIGHTS.mass, detail: weightKg == null ? 'Not measured — no echo length or height for this target' : `${Math.round(weightKg)} kg from ${dimsStr} m (square footprint assumed; sonar measures one horizontal extent)` },
     { key: 'mobility', label: 'Mobility', value: cls.mobility, weight: WEIGHTS.mobility, detail: cls.mobility > 0.5 ? 'Likely to move under current' : 'Likely to stay put' },
-    { key: 'displacement', label: 'Forecast displacement', value: dispNorm, weight: WEIGHTS.displacement, detail: `${dispKm.toFixed(2)} km over ${end.hours} h` },
+    { key: 'displacement', label: 'Forecast displacement', value: dispNorm, weight: WEIGHTS.displacement, detail: !ENABLE_DRIFT_PHYSICS ? 'Bypassed in prototype (stationary target at sonar fix)' : `${dispKm.toFixed(2)} km over ${end.hours} h` },
   ].map((f) => ({ ...f, contribution: f.value * f.weight }));
 
   const raw = factors.reduce((s, f) => s + f.contribution, 0);
   const score = Math.round(clamp(raw) * 100);
-  return { score, tier: tierFor(score), factors, hazardsHit: hits, displacementKm: dispKm };
+  return { score, tier: tierFor(score), factors, hazardsHit: hits, displacementKm: dispKm, positional: true };
+}
+
+/**
+ * Risk for a detection with no navigation fix.
+ *
+ * Hazard exposure and forecast displacement are both positional, so neither can be
+ * assessed without a coordinate. Rather than scoring them as zero — which would push
+ * every unlocated target into the lowest tier and bury it — the remaining factors are
+ * renormalised over the weight actually available, giving a score that stays comparable
+ * with located targets. The two missing factors are reported with value null so the
+ * detail panel can say plainly that they were not assessed.
+ *
+ * @param cls      class prior { severity, mobility, label }
+ * @param conf     model confidence 0..1
+ * @param weightKg estimated mass
+ */
+export function scoreRiskWithoutPosition(cls, conf, weightKg) {
+  const massNorm = weightKg == null ? 0 : clamp(Math.log10(Math.max(1, weightKg)) / 3.5);
+  const confidence = Number(conf) || 0;
+
+  const assessed = [
+    { key: 'severity', label: 'Debris severity', value: cls.severity, weight: WEIGHTS.severity, detail: `${cls.label} class prior` },
+    { key: 'confidence', label: 'Detection confidence', value: confidence, weight: WEIGHTS.confidence, detail: `Model confidence ${confidence.toFixed(2)}` },
+    { key: 'mass', label: 'Estimated mass', value: massNorm, weight: WEIGHTS.mass, detail: weightKg == null ? 'Not measured — no echo length or height for this target' : `${Math.round(weightKg)} kg from the echo (square footprint assumed)` },
+    { key: 'mobility', label: 'Mobility', value: cls.mobility, weight: WEIGHTS.mobility, detail: cls.mobility > 0.5 ? 'Likely to move under current' : 'Likely to stay put' },
+  ].map((f) => ({ ...f, contribution: f.value * f.weight }));
+
+  const unavailable = [
+    { key: 'hazard', label: 'Hazard exposure', value: null, weight: WEIGHTS.hazard, contribution: 0, detail: 'Not assessed — no coordinates for this target' },
+    { key: 'displacement', label: 'Forecast displacement', value: null, weight: WEIGHTS.displacement, contribution: 0, detail: 'Not assessed — drift needs a start position' },
+  ];
+
+  // Renormalise over the weight we could actually assess.
+  const availableWeight = assessed.reduce((s, f) => s + f.weight, 0);
+  const raw = assessed.reduce((s, f) => s + f.contribution, 0) / (availableWeight || 1);
+  const score = Math.round(clamp(raw) * 100);
+
+  return {
+    score,
+    tier: tierFor(score),
+    factors: [...assessed, ...unavailable],
+    hazardsHit: [],
+    displacementKm: null,
+    positional: false,
+  };
 }
