@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     # ── Database ──────────────────────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/nadir"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./nadir.db"
 
     # ── CORS ──────────────────────────────────────────────────────────────
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
