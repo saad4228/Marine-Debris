@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Model weights — exceed GitHub's 100 MB per-file limit
+*.pt
+*.zip
+
+# Raw sonar survey data (~222 MB of XTF) — distribute out of band
+backend/storage/XTFFiles/
+
+# Pre-extracted demo tiles (~15 MB); regenerate via backend/batch_run_all.py
+public/survey_tiles/
