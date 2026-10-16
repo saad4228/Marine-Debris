@@ -15,7 +15,7 @@ import { rngFor } from './utils.js';
 // Toggle for drifting physics simulation in the prototype.
 // Set to false to bypass drifting physics: detections remain stationary at surveyed sonar coordinates.
 // The complete advection physics algorithms are preserved below and can be re-enabled at any time.
-export const ENABLE_DRIFT_PHYSICS = true;
+export const ENABLE_DRIFT_PHYSICS = false;
 
 const TIDAL_PERIOD_H = 12.42;
 
@@ -30,10 +30,10 @@ export function makeCurrentField(seed, center) {
   }));
   return {
     // TODO: replace with real forecast fields
-    baseSpeed: 0.08, // gentle m/s, minimal drift
-    baseBearing: 180, // toward South
-    tidalAmp: 0.04, // reduced m/s
-    tidalBearing: 180, // ebb direction
+    baseSpeed: 0.22, // m/s, residual monsoon current
+    baseBearing: 205, // toward SSW
+    tidalAmp: 0.28, // m/s
+    tidalBearing: 300, // ebb direction
     eddies,
   };
 }
@@ -72,9 +72,9 @@ export function currentAt(field, p, tHours, hazards = []) {
 
 // Wind (m/s, bearing the wind blows TOWARD).
 export function windAt(tHours) {
-  // Minimal wind blowing south
-  const speed = 2.0 + 0.5 * Math.sin(tHours / 9);
-  const bearing = 180 + 5 * Math.sin(tHours / 15);
+  // TODO: replace with Open-Meteo 10 m wind
+  const speed = 4.5 + 1.5 * Math.sin(tHours / 9);
+  const bearing = 235 + 12 * Math.sin(tHours / 15);
   return { speed, bearing };
 }
 
@@ -87,8 +87,7 @@ function depthAttenuation(depthM) {
 
 // Critical current speed (m/s) below which the object stays put.
 function criticalSpeed(cls) {
-  // Lowered critical speed threshold so even heavy items (like crab pots) drift slightly
-  return 0.10 * (1 - cls.mobility) + 0.01;
+  return 0.55 * (1 - cls.mobility) + 0.05;
 }
 
 /**

@@ -6,23 +6,23 @@ function drawBBox(ctx, targets, label, w, h) {
   if (!targets || !targets.length) return;
   for (const t of targets) {
     if (!t) continue;
-    const x = (t.x ?? 0) * w;
-    const y = (t.y ?? 0) * h;
+    const x = (t.x ?? 0.5) * w;
+    const y = (t.y ?? 0.5) * h;
     const bw = Math.max(20, (t.size ?? t.w ?? 0.1) * w);
     const bh = Math.max(20, (t.size ?? t.h ?? 0.1) * h);
     ctx.strokeStyle = '#e4572e';
     ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, bw, bh);
+    ctx.strokeRect(x - bw / 2, y - bh / 2, bw, bh);
 
     if (label) {
       ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
       ctx.textBaseline = 'middle';
       const tw = ctx.measureText(label).width + 10;
-      const ly = Math.max(0, y - 18);
+      const ly = Math.max(0, y - bh / 2 - 18);
       ctx.fillStyle = '#e4572e';
-      ctx.fillRect(x, ly, tw, 18);
+      ctx.fillRect(x - bw / 2, ly, tw, 18);
       ctx.fillStyle = '#03070c';
-      ctx.fillText(label, x + 5, ly + 9.5);
+      ctx.fillText(label, x - bw / 2 + 5, ly + 9.5);
     }
   }
 }
