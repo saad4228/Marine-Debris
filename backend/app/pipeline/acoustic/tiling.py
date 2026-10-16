@@ -35,8 +35,9 @@ class TileMetadata:
     # Acoustic and spatial telemetry
     ping_start: int
     ping_end: int
-    center_lat: float
-    center_lon: float
+    # None when no ping in this tile's window carried a navigation fix
+    center_lat: float | None
+    center_lon: float | None
     heading_deg: float
     altitude_m: float
     depth_m: float
@@ -104,16 +105,19 @@ def tile_xtf_waterfall(
         if window_nav:
             p_start = window_nav[0].ping_number
             p_end = window_nav[-1].ping_number
-            avg_lat = float(np.mean([p.lat for p in window_nav]))
-            avg_lon = float(np.mean([p.lon for p in window_nav]))
+            # Average only over pings that actually carried a fix; a tile whose window has
+            # no fix at all stays unlocated rather than borrowing a neighbour's position.
+            located = [p for p in window_nav if p.has_fix]
+            avg_lat = float(np.mean([p.lat for p in located])) if located else None
+            avg_lon = float(np.mean([p.lon for p in located])) if located else None
             avg_heading = float(np.mean([p.heading for p in window_nav]))
             avg_alt = float(np.mean([p.altitude_m for p in window_nav]))
             avg_dep = float(np.mean([p.depth_m for p in window_nav]))
             slant_r = float(np.mean([p.slant_range_m for p in window_nav]))
         else:
             p_start, p_end = y_start + 1, y_end
-            avg_lat = survey_data.min_lat
-            avg_lon = survey_data.min_lon
+            avg_lat = None
+            avg_lon = None
             avg_heading = 45.0
             avg_alt = 6.5
             avg_dep = 28.0

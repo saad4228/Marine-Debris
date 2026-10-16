@@ -30,7 +30,7 @@ def get_detector() -> BaseDetector:
         else:
             try:
                 from app.pipeline.yolo_detector import YoloDetector
-                weights = settings.MODEL_PATH or "best.pt"
+                weights = settings.MODEL_PATH or "new.pt"
                 logger.info("Instantiating YoloDetector with weights: %s", weights)
                 _detector_instance = YoloDetector(weights_path=weights)
             except Exception as e:

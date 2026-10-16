@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { SITE } from '../site/data.js';
+import { SITE, CLASS_FILTERS } from '../site/data.js';
 import { api } from '../site/api.js';
 import { useRecords } from '../lib/useRecords.js';
 import { TIERS } from '../lib/risk.js';
@@ -13,7 +13,7 @@ export default function MapPage() {
   const [hours, setHours] = useState(24);
   const { records, hazards, loading, error } = useRecords(hours);
   const [selectedId, setSelectedId] = useState(params.get('sel'));
-  const [filters, setFilters] = useState({ tiers: new Set(TIERS.map((t) => t.id)), classes: new Set(SITE.classes.map((c) => c.id)), minConf: 0 });
+  const [filters, setFilters] = useState({ tiers: new Set(TIERS.map((t) => t.id)), classes: new Set(CLASS_FILTERS.map((c) => c.id)), minConf: 0 });
   const [layers, setLayers] = useState({ drift: true, hazards: true, currents: false, seamarks: false, route: true });
   const [port, setPort] = useState(SITE.area.port);
   const [mission, setMission] = useState({ running: false, route: null, error: null });

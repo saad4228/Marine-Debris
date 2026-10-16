@@ -12,6 +12,17 @@ ultralytics>=8.3.0
 torch>=2.0.0
 torchvision>=0.15.0
 pillow>=10.0.0
+numpy>=1.24
+
+# Acoustic denoising
+# scipy is optional - without it denoise.py falls back to pure-NumPy filters
+# and DESPECKLE_METHOD=median degrades to lee.
+scipy>=1.10
+
+# Optional despeckle backends, only needed for DESPECKLE_METHOD=bilateral/nlm/wavelet
+# opencv-python>=4.8        # bilateral
+# scikit-image>=0.22        # nlm, wavelet
+# PyWavelets>=1.4           # required by scikit-image wavelet denoising
 
 # Testing & Dev
 pytest>=8.0.0

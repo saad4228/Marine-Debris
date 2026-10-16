@@ -82,9 +82,8 @@ export default function Landing() {
           <h1 className="display-xl rise-in text-foam text-shadow-deep">{SITE.name}</h1>
           <p className="rise-in rise-in-2 mt-6 max-w-[28ch] font-body text-2xl italic text-sun text-shadow-deep md:text-3xl">{SITE.tagline}</p>
           <dl className="readout rise-in rise-in-3 mt-10 grid max-w-md grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-foamdim text-shadow-deep">
-            <dt>event</dt><dd className="text-foam">{SITE.event}</dd>
-            <dt>problem</dt><dd className="text-foam">{SITE.problemStatement}</dd>
             <dt>sensor</dt><dd className="text-foam">side-scan sonar · XTF</dd>
+            <dt>coverage</dt><dd className="text-foam">dual-channel swath · georeferenced</dd>
             <dt>outputs</dt><dd className="text-foam">position · drift · risk · route</dd>
           </dl>
           <div className="rise-in rise-in-4 mt-10 flex flex-wrap gap-3">

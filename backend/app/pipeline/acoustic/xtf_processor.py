@@ -9,11 +9,13 @@ from dataclasses import dataclass, field
 import datetime
 import io
 import logging
+import math
 import os
 from pathlib import Path
 import struct
 import numpy as np
 
+from app.pipeline.acoustic.denoise import DenoiseConfig, condition_channel, precondition_channel
 from app.pipeline.acoustic.slant_range import correct_waterfall_slant_range
 from app.pipeline.acoustic.water_column import strip_waterfall_water_column
 from app.pipeline.acoustic.gain_correction import normalize_waterfall_contrast
@@ -21,17 +23,50 @@ from app.pipeline.acoustic.gain_correction import normalize_waterfall_contrast
 logger = logging.getLogger("nadir.pipeline.xtf")
 
 
+def _validate_fix(raw_lat, raw_lon) -> tuple[float | None, float | None]:
+    """Return a usable (lat, lon) fix, or (None, None) if the ping has no real position.
+
+    A fix is rejected when either value is missing, non-numeric, out of range, or sitting
+    on Null Island (0, 0) — the classic "no GPS" sentinel. Rejected fixes stay None: the
+    pipeline reports a detection as unlocated rather than inventing a plausible position.
+    """
+    try:
+        lat = float(raw_lat)
+        lon = float(raw_lon)
+    except (TypeError, ValueError):
+        return None, None
+
+    if not (math.isfinite(lat) and math.isfinite(lon)):
+        return None, None
+    if abs(lat) > 90.0 or abs(lon) > 180.0:
+        return None, None
+    if abs(lat) < 1e-6 and abs(lon) < 1e-6:
+        return None, None
+
+    return lat, lon
+
+
 @dataclass
 class XtfNavigationPoint:
-    """Navigation and acoustic telemetry for a single sonar ping."""
+    """Navigation and acoustic telemetry for a single sonar ping.
+
+    ``lat``/``lon`` are None when the XTF carries no usable fix for this ping. They are
+    never substituted with a placeholder position — a detection with no navigation is
+    reported as located nowhere, not as located somewhere plausible.
+    """
     ping_number: int
     timestamp: datetime.datetime
-    lat: float
-    lon: float
+    lat: float | None
+    lon: float | None
     heading: float
     altitude_m: float
     depth_m: float
     slant_range_m: float
+
+    @property
+    def has_fix(self) -> bool:
+        """True when this ping carries a usable navigation fix."""
+        return self.lat is not None and self.lon is not None
 
 
 @dataclass
@@ -49,11 +84,16 @@ class XtfSurveyData:
     # Unified corrected 2D image matrix [pings, full_swath_samples] (uint8 0..255)
     # [Port outer swath <--- Nadir (center) ---> Starboard outer swath]
     waterfall_composite: np.ndarray
-    # Bounds for survey bounding box
-    min_lat: float
-    max_lat: float
-    min_lon: float
-    max_lon: float
+    # Survey bounding box; all None when the file carried no navigation at all
+    min_lat: float | None
+    max_lat: float | None
+    min_lon: float | None
+    max_lon: float | None
+
+    @property
+    def has_navigation(self) -> bool:
+        """True when at least one ping carried a usable navigation fix."""
+        return any(p.has_fix for p in self.nav_points)
 
 
 class XtfProcessor:
@@ -64,16 +104,14 @@ class XtfProcessor:
         strip_water_col: bool = True,
         correct_slant: bool = True,
         normalize_gain: bool = True,
+        denoise: DenoiseConfig | None = None,
         default_slant_range_m: float = 60.0,
-        default_base_lat: float = 15.4150,
-        default_base_lon: float = 73.7250,
     ):
         self.strip_water_col = strip_water_col
         self.correct_slant = correct_slant
         self.normalize_gain = normalize_gain
+        self.denoise = denoise if denoise is not None else DenoiseConfig()
         self.default_slant_range_m = default_slant_range_m
-        self.default_base_lat = default_base_lat
-        self.default_base_lon = default_base_lon
 
     def process_file(self, file_path_or_bytes: str | Path | bytes, filename: str = "survey.xtf") -> XtfSurveyData:
         """Parse XTF file and return extracted acoustic waterfall and telemetry."""
@@ -155,13 +193,10 @@ class XtfProcessor:
             except Exception:
                 ts = datetime.datetime.now(datetime.timezone.utc)
 
-            # Coordinates
-            lat = float(getattr(hdr, "SensorYcoordinate", None) or getattr(hdr, "ShipYcoordinate", None) or 0.0)
-            lon = float(getattr(hdr, "SensorXcoordinate", None) or getattr(hdr, "ShipXcoordinate", None) or 0.0)
-            if lat == 0.0 or lon == 0.0 or abs(lat) > 90.0 or abs(lon) > 180.0:
-                idx = len(nav_points)
-                lat = round(self.default_base_lat + (idx * 0.00008), 6)
-                lon = round(self.default_base_lon + (idx * 0.00012), 6)
+            # Coordinates. Left as None when the ping has no usable fix — never invented.
+            raw_lat = getattr(hdr, "SensorYcoordinate", None) or getattr(hdr, "ShipYcoordinate", None)
+            raw_lon = getattr(hdr, "SensorXcoordinate", None) or getattr(hdr, "ShipXcoordinate", None)
+            lat, lon = _validate_fix(raw_lat, raw_lon)
 
             heading = float(getattr(hdr, "SensorHeading", None) or getattr(hdr, "ShipGyro", None) or 45.0)
             alt = float(
@@ -260,11 +295,10 @@ class XtfProcessor:
             if len(header_bytes) < 14:
                 break
 
-            magic, header_type, sub_channel_number, num_chans, num_bytes_rec = struct.unpack(
-                "<HBBHI", header_bytes[:10]
-            )
+            magic, header_type, sub_channel_number, num_chans = struct.unpack("<HBBH", header_bytes[:6])
+            num_bytes_rec = struct.unpack("<I", header_bytes[10:14])[0]
 
-            if magic != 0xFACE:
+            if magic != 0xFACE or num_bytes_rec == 0:
                 # Seek forward 1 byte to re-sync magic header
                 buf.seek(packet_start + 1)
                 continue
@@ -275,17 +309,30 @@ class XtfProcessor:
                 if len(ping_hdr_bytes) < 242:
                     break
 
+                ping_full = header_bytes + ping_hdr_bytes
                 try:
-                    p_num = struct.unpack("<I", ping_hdr_bytes[16:20])[0]
-                    alt = struct.unpack("<f", ping_hdr_bytes[56:60])[0]
-                    slant_r = struct.unpack("<f", ping_hdr_bytes[48:52])[0]
-                    dep = struct.unpack("<f", ping_hdr_bytes[52:56])[0]
-                    heading = struct.unpack("<f", ping_hdr_bytes[68:72])[0]
-                    sensor_x = struct.unpack("<d", ping_hdr_bytes[72:80])[0]
-                    sensor_y = struct.unpack("<d", ping_hdr_bytes[80:88])[0]
+                    p_num = struct.unpack("<I", ping_full[24:28])[0] or (len(nav_points) + 1)
+                    alt = struct.unpack("<f", ping_full[56:60])[0]
+                    slant_r = struct.unpack("<f", ping_full[48:52])[0]
+                    dep = struct.unpack("<f", ping_full[52:56])[0]
+                    heading = struct.unpack("<f", ping_full[68:72])[0]
+
+                    # Read coordinates: standard modern/USGS synthetic XTF stores lat at 128, lon at 136
+                    lat_cand = struct.unpack("<d", ping_full[128:136])[0]
+                    lon_cand = struct.unpack("<d", ping_full[136:144])[0]
+                    if not (-90.0 <= lat_cand <= 90.0 and -180.0 <= lon_cand <= 180.0 and (lat_cand != 0 or lon_cand != 0)):
+                        # Fallback to sensor / ship coordinate fields
+                        sensor_x = struct.unpack("<d", ping_full[72:80])[0]
+                        sensor_y = struct.unpack("<d", ping_full[80:88])[0]
+                        lat_cand, lon_cand = sensor_y, sensor_x
+                        if not (-90.0 <= lat_cand <= 90.0 and -180.0 <= lon_cand <= 180.0 and (lat_cand != 0 or lon_cand != 0)):
+                            ship_x = struct.unpack("<d", ping_full[88:96])[0]
+                            ship_y = struct.unpack("<d", ping_full[96:104])[0]
+                            lat_cand, lon_cand = ship_y, ship_x
                 except Exception:
                     p_num = len(nav_points) + 1
-                    alt, slant_r, dep, heading, sensor_x, sensor_y = 6.5, 60.0, 28.0, 45.0, 0.0, 0.0
+                    alt, slant_r, dep, heading = 6.5, 60.0, 28.0, 45.0
+                    lat_cand, lon_cand = None, None
 
                 if alt <= 0.5 or alt > 150.0:
                     alt = 6.5
@@ -294,9 +341,7 @@ class XtfProcessor:
                 if slant_r > 5.0:
                     max_slant_range = max(max_slant_range, slant_r)
 
-                idx = len(nav_points)
-                lat = sensor_y if (-90.0 <= sensor_y <= 90.0 and abs(sensor_y) > 0.1) else round(self.default_base_lat + idx * 0.00008, 6)
-                lon = sensor_x if (-180.0 <= sensor_x <= 180.0 and abs(sensor_x) > 0.1) else round(self.default_base_lon + idx * 0.00012, 6)
+                lat, lon = _validate_fix(lat_cand, lon_cand)
                 if heading == 0.0:
                     heading = 45.0
 
@@ -315,18 +360,28 @@ class XtfProcessor:
                 altitudes.append(alt)
                 depths.append(dep)
 
-                # Read channel bytes
-                data_len = max(0, num_bytes_rec - 256)
+                # Read channel headers (64 bytes each) and sample bytes
+                chan_hdr_len = 64 * max(1, num_chans)
+                buf.read(chan_hdr_len)
+                data_len = max(0, num_bytes_rec - 256 - chan_hdr_len)
                 if data_len > 0:
                     sample_bytes = buf.read(data_len)
                     samples = np.frombuffer(sample_bytes, dtype=np.uint8)
-                    half = len(samples) // 2
-                    if half > 0:
-                        port_pings.append(samples[:half].astype(np.float32))
-                        stbd_pings.append(samples[half:].astype(np.float32))
+                    if num_chans == 1:
+                        half = len(samples) // 2
+                        if half > 0:
+                            port_pings.append(samples[:half].astype(np.float32))
+                            stbd_pings.append(samples[half:].astype(np.float32))
+                        else:
+                            port_pings.append(samples.astype(np.float32))
+                            stbd_pings.append(samples.astype(np.float32))
                     else:
-                        port_pings.append(np.zeros(512, dtype=np.float32))
-                        stbd_pings.append(np.zeros(512, dtype=np.float32))
+                        spc = len(samples) // num_chans
+                        port_pings.append(samples[:spc].astype(np.float32))
+                        stbd_pings.append(samples[spc : 2 * spc].astype(np.float32))
+                else:
+                    port_pings.append(np.zeros(512, dtype=np.float32))
+                    stbd_pings.append(np.zeros(512, dtype=np.float32))
             else:
                 # Skip non-ping records
                 skip_bytes = max(0, num_bytes_rec - 14)
@@ -379,33 +434,55 @@ class XtfProcessor:
         max_slant_range: float,
     ) -> XtfSurveyData:
         """Apply acoustic pipeline and compose the final corrected waterfall matrix."""
-        # 1. Water-column removal
-        if self.strip_water_col:
-            port_proc = strip_waterfall_water_column(port_arr, altitudes, max_slant_range)
-            stbd_proc = strip_waterfall_water_column(stbd_arr, altitudes, max_slant_range)
-        else:
-            port_proc = port_arr.copy()
-            stbd_proc = stbd_arr.copy()
+        # 1. Denoise pass A - repair dead/saturated pings before the nadir search reads them
+        port_clean = precondition_channel(port_arr, self.denoise, "port")
+        stbd_clean = precondition_channel(stbd_arr, self.denoise, "starboard")
 
-        # 2. Slant-to-ground geometric correction
+        # 2. Water-column removal
+        if self.strip_water_col:
+            port_proc = strip_waterfall_water_column(port_clean, altitudes, max_slant_range)
+            stbd_proc = strip_waterfall_water_column(stbd_clean, altitudes, max_slant_range)
+        else:
+            port_proc = port_clean.copy()
+            stbd_proc = stbd_clean.copy()
+
+        # 3. Slant-to-ground geometric correction
         if self.correct_slant:
             port_proc = correct_waterfall_slant_range(port_proc, altitudes, max_slant_range)
             stbd_proc = correct_waterfall_slant_range(stbd_proc, altitudes, max_slant_range)
 
-        # 3. Port side is flipped horizontally so outer swath is left, nadir at center
+        # 4. Denoise pass B - flatten beam pattern, destripe and despeckle each channel
+        #    separately, before the seam is created by compositing
+        port_proc = condition_channel(port_proc, self.denoise, "port")
+        stbd_proc = condition_channel(stbd_proc, self.denoise, "starboard")
+
+        # 5. Port side is flipped horizontally so outer swath is left, nadir at center
         port_flipped = np.fliplr(port_proc)
 
-        # 4. Concatenate Port + Starboard into full swath
+        # 6. Concatenate Port + Starboard into full swath
         full_waterfall = np.hstack([port_flipped, stbd_proc])
 
-        # 5. Dynamic range and contrast normalization to uint8
+        # 7. Dynamic range and contrast normalization to uint8
         if self.normalize_gain:
             composite_uint8 = normalize_waterfall_contrast(full_waterfall)
         else:
             composite_uint8 = np.clip(full_waterfall, 0, 255).astype(np.uint8)
 
-        lats = [p.lat for p in nav_points]
-        lons = [p.lon for p in nav_points]
+        # Bounds are computed only from pings that actually carried a fix. With no fixes
+        # at all the survey has no bounding box, and every bound stays None.
+        lats = [p.lat for p in nav_points if p.lat is not None]
+        lons = [p.lon for p in nav_points if p.lon is not None]
+
+        located = len(lats)
+        if located == 0:
+            logger.warning(
+                "%s carried no usable navigation; detections will be reported without coordinates.",
+                filename,
+            )
+        elif located < len(nav_points):
+            logger.info(
+                "%s: %d/%d pings carried a navigation fix.", filename, located, len(nav_points)
+            )
 
         return XtfSurveyData(
             filename=filename,
@@ -417,14 +494,19 @@ class XtfProcessor:
             port_raw=port_arr,
             starboard_raw=stbd_arr,
             waterfall_composite=composite_uint8,
-            min_lat=float(min(lats)) if lats else self.default_base_lat,
-            max_lat=float(max(lats)) if lats else self.default_base_lat + 0.05,
-            min_lon=float(min(lons)) if lons else self.default_base_lon,
-            max_lon=float(max(lons)) if lons else self.default_base_lon + 0.05,
+            min_lat=float(min(lats)) if lats else None,
+            max_lat=float(max(lats)) if lats else None,
+            min_lon=float(min(lons)) if lons else None,
+            max_lon=float(max(lons)) if lons else None,
         )
 
     def _generate_synthetic_survey(self, filename: str, sonar_name: str) -> XtfSurveyData:
-        """Create a realistic synthetic acoustic survey when raw bytes have no valid pings."""
+        """Create a synthetic acoustic survey when raw bytes contain no valid pings.
+
+        The backscatter imagery is synthesised so the detector still has something to run
+        on, but the navigation carries no position: an unparseable file tells us nothing
+        about where it was recorded, so every detection from it is reported as unlocated.
+        """
         n_pings = 240
         n_samples = 512
         port = np.random.normal(70, 20, (n_pings, n_samples)).astype(np.float32)
@@ -441,8 +523,8 @@ class XtfProcessor:
             XtfNavigationPoint(
                 ping_number=i + 1,
                 timestamp=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=i * 0.2),
-                lat=self.default_base_lat + i * 0.00008,
-                lon=self.default_base_lon + i * 0.00012,
+                lat=None,
+                lon=None,
                 heading=45.0,
                 altitude_m=6.5 + np.sin(i / 20.0) * 0.5,
                 depth_m=28.0 + np.cos(i / 20.0) * 0.3,

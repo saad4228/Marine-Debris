@@ -11,8 +11,8 @@
 
 import { rngFor } from './utils.js';
 
-const BASE = '#07060a';
-const AMBER = '242,169,59';
+const BASE = '#1a120b';
+const AMBER = '235,160,54';
 const FLAG = '#e4572e';
 const ABYSS = '#03070c';
 
@@ -64,37 +64,42 @@ export function paintSonar(ctx, w, h, opts = {}) {
 
   ctx.save();
 
-  // base
-  ctx.fillStyle = BASE;
+  // base seabed reverberation
+  const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+  bgGrad.addColorStop(0, '#1c130c');
+  bgGrad.addColorStop(0.5, '#352110');
+  bgGrad.addColorStop(1, '#1a1109');
+  ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, w, h);
 
-  // ping banding
+  // ping banding with visible acoustic backscatter intensity
   for (let y = 0; y < h; y += bandStep) {
-    const spike = rng() < 0.04 ? 0.12 : 0;
-    ctx.fillStyle = `rgba(${AMBER},${0.025 + rng() * 0.07 + spike})`;
+    const spike = rng() < 0.06 ? 0.3 : 0;
+    const intensity = 0.16 + rng() * 0.28 + spike;
+    ctx.fillStyle = `rgba(${AMBER},${intensity})`;
     ctx.fillRect(0, y, w, bandStep);
   }
 
   // range falloff
   const fall = ctx.createLinearGradient(0, 0, w, 0);
-  fall.addColorStop(0, 'rgba(7,6,10,0.55)');
-  fall.addColorStop(0.3, 'rgba(7,6,10,0)');
-  fall.addColorStop(0.7, 'rgba(7,6,10,0)');
-  fall.addColorStop(1, 'rgba(7,6,10,0.55)');
+  fall.addColorStop(0, 'rgba(10,7,5,0.6)');
+  fall.addColorStop(0.25, 'rgba(10,7,5,0)');
+  fall.addColorStop(0.75, 'rgba(10,7,5,0)');
+  fall.addColorStop(1, 'rgba(10,7,5,0.6)');
   ctx.fillStyle = fall;
   ctx.fillRect(0, 0, w, h);
 
   // sand ripples
-  const ripples = Math.round(8 * density + rng() * 6);
-  ctx.lineWidth = 1;
+  const ripples = Math.round(10 * density + rng() * 8);
+  ctx.lineWidth = 1.2;
   for (let i = 0; i < ripples; i++) {
     const y0 = rng() * h;
     const amp = 2 + rng() * 6;
     const freq = 0.02 + rng() * 0.04;
     const phase = rng() * Math.PI * 2;
     const x0 = rng() * w * 0.6;
-    const len = w * (0.2 + rng() * 0.5);
-    ctx.strokeStyle = `rgba(${AMBER},${0.05 + rng() * 0.08})`;
+    const len = w * (0.25 + rng() * 0.5);
+    ctx.strokeStyle = `rgba(255,200,100,${0.18 + rng() * 0.22})`;
     ctx.beginPath();
     for (let x = x0; x < x0 + len; x += 3) {
       const y = y0 + Math.sin(x * freq + phase) * amp;

@@ -4,7 +4,7 @@ import { SITE, API } from '../site/data.js';
 import { api, isMock } from '../site/api.js';
 import { useRecords, notifyRecordsUpdated } from '../lib/useRecords.js';
 import { paintSonar } from '../lib/sonar.js';
-import { prefersReducedMotion, formatBytes, classLabel, cx, wait } from '../lib/utils.js';
+import { formatBytes, classLabel, cx, downloadImage, detectionImageName, confidenceColor, confidenceBand, saveBlob } from '../lib/utils.js';
 import SurfaceBand from '../components/SurfaceBand.jsx';
 import DetectionTable from '../components/DetectionTable.jsx';
 import DebrisMap from '../components/DebrisMap.jsx';
@@ -13,6 +13,7 @@ import { TIERS } from '../lib/risk.js';
 
 const XTF_STAGES = [
   'Ingest binary XTF ping stream & navigation',
+  'Denoise: repair bad pings & suppress speckle',
   'Acoustic water-column & slant-range correction',
   'Slice waterfall into overlapping 640×640 JPG tiles',
   'Concurrent YOLOv8 debris inference',
@@ -54,13 +55,17 @@ function drawBox(ctx, d, w, h) {
   ctx.fillText(label, x + 4, ly + 9.5);
 }
 
+function exportFilename(kind) {
+  const day = new Date().toISOString().slice(0, 10);
+  return `detections_${day}.${kind}`;
+}
+
 let workbenchCache = {
   xtfData: null,
   results: null,
   fileInfo: null,
   fileType: 'image',
   status: 'idle',
-  stage: 0,
   selectedTile: null,
 };
 
@@ -96,11 +101,59 @@ export default function Upload() {
   const [fileType, setFileType] = useState(workbenchCache.fileType); // 'xtf' or 'image'
   const [imageLoaded, setImageLoaded] = useState(false);
   const [status, setStatus] = useState(workbenchCache.status);
-  const [stage, setStage] = useState(workbenchCache.stage);
   const [results, setResults] = useState(workbenchCache.results);
   const [xtfData, setXtfData] = useState(workbenchCache.xtfData);
   const [error, setError] = useState(null);
   const [selectedTile, setSelectedTile] = useState(workbenchCache.selectedTile);
+  // Real elapsed seconds, so a long backend call visibly progresses without pretending
+  // to know which pipeline stage it is on.
+  const [elapsed, setElapsed] = useState(0);
+  // Which detection's tile is being fetched, and the last failure — keyed per row so one
+  // bad image cannot make the whole table look broken.
+  const [imgBusy, setImgBusy] = useState(null);
+  const [imgError, setImgError] = useState(null);
+
+
+
+  // Catalogue-wide export: which format is in flight, and the last failure.
+  const [exporting, setExporting] = useState(null);
+  const [exportError, setExportError] = useState(null);
+
+  async function runExport(kind) {
+    if (exporting) return;
+    setExporting(kind);
+    setExportError(null);
+    try {
+      // No class filter here — the registry shows the whole catalogue, so the export
+      // matches what is on screen.
+      const blob = kind === 'geojson' ? await api.exportGeoJSON(null) : await api.exportCSV(null);
+      saveBlob(blob, exportFilename(kind));
+    } catch (e) {
+      setExportError(e.message);
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  async function saveDetectionImage(det, key) {
+    if (imgBusy) return;
+    setImgBusy(key);
+    setImgError(null);
+    try {
+      await downloadImage(det.image_url, detectionImageName(det.id, det.cls, det.image_url));
+    } catch (e) {
+      setImgError(`${det.id || 'Target'}: ${e.message}`);
+    } finally {
+      setImgBusy(null);
+    }
+  }
+
+  useEffect(() => {
+    if (status !== 'running') return undefined;
+    const started = Date.now();
+    const t = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [status]);
 
   const updateCache = (updates) => {
     workbenchCache = { ...workbenchCache, ...updates };
@@ -145,23 +198,17 @@ export default function Upload() {
     setResults(null);
     setXtfData(null);
     setStatus('running');
-    setStage(0);
+    setElapsed(0);
     setFileType(isXtf ? 'xtf' : 'image');
     setFileInfo({ name: file.name, size: file.size, isXtf });
 
     if (isXtf) {
       // Process Full XTF Sonar File
-      const stagesList = XTF_STAGES;
-      const delay = prefersReducedMotion() ? 50 : 280;
-
+      // No fake stage advance. The backend does not stream progress, so the only
+      // honest states are "running" and "finished" — a timer that ticked stages off
+      // showed six of seven complete in under two seconds and then sat frozen on the
+      // last one for the real duration of the request.
       const xtfPromise = api.processXtf(file);
-      xtfPromise.catch(() => {});
-
-      for (let i = 0; i < stagesList.length - 1; i++) {
-        await wait(delay);
-        if (!alive()) return;
-        setStage(i + 1);
-      }
 
       try {
         const data = await xtfPromise;
@@ -172,7 +219,6 @@ export default function Upload() {
         if (firstTile) {
           setSelectedTile(firstTile);
         }
-        setStage(stagesList.length);
         setStatus('done');
         updateCache({
           xtfData: data,
@@ -180,7 +226,6 @@ export default function Upload() {
           fileInfo: { name: file.name, size: file.size, isXtf: true },
           fileType: 'xtf',
           status: 'done',
-          stage: stagesList.length,
           selectedTile: firstTile,
         });
         notifyRecordsUpdated();
@@ -205,26 +250,17 @@ export default function Upload() {
       drawPreview(img, null);
 
       const detection = api.detect(file);
-      detection.catch(() => {});
-      const delay = prefersReducedMotion() ? 0 : 380;
-      for (let i = 0; i < TILE_STAGES.length - 1; i++) {
-        await wait(delay);
-        if (!alive()) return;
-        setStage(i + 1);
-      }
       try {
         const { detections } = await detection;
         if (!alive()) return;
         setResults(detections);
         drawPreview(img, detections);
-        setStage(TILE_STAGES.length);
         setStatus('done');
         updateCache({
           results: detections,
           fileInfo: { name: file.name, size: file.size, isXtf: false },
           fileType: 'image',
           status: 'done',
-          stage: TILE_STAGES.length,
         });
         notifyRecordsUpdated();
         if (refresh) refresh();
@@ -317,8 +353,8 @@ export default function Upload() {
           )}
         </div>
 
-        {/* 1. Sonar Upload Dropzone */}
-        <section className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" aria-labelledby="upload-h">
+        {/* 1. Sonar Ingestion */}
+        <section className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]" aria-labelledby="upload-h">
           <div>
             <div className="flex items-center justify-between">
               <h2 id="upload-h" className="text-2xl font-display font-bold">Sonar Ingestion</h2>
@@ -335,7 +371,7 @@ export default function Upload() {
               onDragLeave={() => setDragging(false)}
               onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer?.files?.[0]; if (f) handleFile(f); }}
               className={cx(
-                'mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center border border-dashed px-6 py-8 text-center transition-all duration-200',
+                'mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-6 py-8 text-center transition-all duration-200',
                 dragging ? 'border-ping bg-mid/40 shadow-xl' : 'hairline hover:border-foamdim bg-abyss/40'
               )}
             >
@@ -446,7 +482,7 @@ export default function Upload() {
                             <img
                               src={t.image_url}
                               alt={t.tile_id}
-                              className="h-28 w-full object-cover grayscale contrast-125"
+                              className="h-28 w-full object-cover rounded bg-abyss/80 transition-transform group-hover:scale-105"
                               loading="lazy"
                             />
                             <div className="mt-1.5 flex items-center justify-between text-[10px] readout text-foamdim">
@@ -459,6 +495,29 @@ export default function Upload() {
                         );
                       })}
                     </div>
+
+                    {/* Selected Tile Inspector */}
+                    {selectedTile && (
+                      <div className="mt-4 border hairline bg-abyss p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                          <span className="readout text-xs text-foam font-bold flex items-center gap-2">
+                            <span className="font-mono text-ping">▣</span>
+                            Inspecting: <span className="text-ping font-mono">{selectedTile.tile_id}</span>
+                            <span className="capitalize text-foamdim">({selectedTile.coverage?.replace('_', ' ')})</span>
+                          </span>
+                          <span className="readout text-[11px] text-foamdim">
+                            Alt: {selectedTile.altitude_m}m · Depth: {selectedTile.depth_m}m
+                          </span>
+                        </div>
+                        <div className="relative border hairline bg-black flex justify-center overflow-hidden rounded">
+                          <img
+                            src={selectedTile.image_url}
+                            alt={selectedTile.tile_id}
+                            className="max-h-96 w-full object-contain"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -467,15 +526,25 @@ export default function Upload() {
 
           {/* 2. Pipeline Execution Stages & Results */}
           <div>
-            <h3 className="text-xl font-display font-bold">Pipeline Telemetry</h3>
+            <h3 className="flex flex-wrap items-baseline gap-3 text-xl font-display font-bold">
+              Pipeline Telemetry
+              {status === 'running' && (
+                <span className="readout text-sm font-normal text-foamdim" aria-live="polite">
+                  processing · {elapsed}s elapsed
+                </span>
+              )}
+            </h3>
             <ol className="mt-3 border-t hairline" aria-label="Pipeline progress">
               {currentStages.map((s, i) => {
-                const state = status === 'running' && i === stage ? 'active' : i < stage ? 'done' : 'pending';
+                // The backend reports nothing until it returns, so every stage shares the
+                // same state: all running, or all done. Claiming per-stage progress would
+                // be invented.
+                const state = status === 'running' ? 'active' : status === 'done' ? 'done' : 'pending';
                 return (
                   <li key={s} className="flex items-center gap-4 border-b hairline py-2.5 text-sm" aria-current={state === 'active' ? 'step' : undefined}>
                     <span className="font-display font-black text-ping" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
                     <span className={cx(state === 'pending' && 'text-foamdim', state === 'active' && 'stage-active')}>{s}</span>
-                    <span className="readout ml-auto text-foamdim">{state === 'done' ? '✓ done' : state === 'active' ? 'running...' : 'waiting'}</span>
+                    <span className="readout ml-auto text-foamdim">{state === 'done' ? '✓ done' : state === 'active' ? 'running…' : 'waiting'}</span>
                   </li>
                 );
               })}
@@ -503,6 +572,7 @@ export default function Upload() {
                         <th scope="col">Range</th>
                         <th scope="col">Est Height</th>
                         <th scope="col">GPS Coordinates</th>
+                        <th scope="col">Tile</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -510,12 +580,49 @@ export default function Upload() {
                         <tr key={i} className="hover:bg-mid/30 transition-colors">
                           <td className="readout font-bold text-ping">{d.id || `TGT-${i + 1}`}</td>
                           <td className="font-display font-bold text-foam">{classLabel(SITE.classes, d.cls)}</td>
-                          <td className="readout text-ping font-bold">{d.conf.toFixed(2)}</td>
+                          <td className="readout font-bold">
+                            <span
+                              className="inline-flex items-center gap-1.5"
+                              style={{ color: confidenceColor(d.conf) }}
+                              title={`${confidenceBand(d.conf)} confidence (${d.conf.toFixed(2)})`}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="inline-block h-2 w-2 rounded-full"
+                                style={{ background: confidenceColor(d.conf) }}
+                              />
+                              {d.conf.toFixed(2)}
+                            </span>
+                          </td>
                           <td className="readout capitalize text-foamdim">{d.side || 'starboard'}</td>
                           <td className="readout text-foamdim">{d.range_m != null ? `${d.range_m}m` : '—'}</td>
                           <td className="readout text-sun font-bold">{d.height_est_m != null ? `${d.height_est_m}m` : '—'}</td>
-                          <td className="readout text-foamdim text-xs">
-                            {d.lat != null && d.lon != null ? `${d.lat.toFixed(4)}, ${d.lon.toFixed(4)}` : '—'}
+                          <td className="readout text-xs">
+                            {d.lat != null && d.lon != null ? (
+                              <span className="text-foamdim">{d.lat.toFixed(4)}, {d.lon.toFixed(4)}</span>
+                            ) : (
+                              <span
+                                className="inline-block border border-sun/50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sun"
+                                title="This target was detected, but its ping carried no navigation fix, so no position could be derived."
+                              >
+                                No coordinates found
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            {d.image_url ? (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                disabled={imgBusy !== null}
+                                onClick={() => saveDetectionImage(d, i)}
+                                title={`Download the sonar tile this ${d.cls} was detected in`}
+                              >
+                                {imgBusy === i ? 'Saving…' : '↓ Image'}
+                              </button>
+                            ) : (
+                              <span className="readout text-xs text-foamdim">no image</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -523,12 +630,25 @@ export default function Upload() {
                   </table>
                 </div>
               )}
-              {status === 'done' && results && results.length > 0 && (
-                <p className="mt-3 text-xs text-foamdim flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-ping" />
-                  All targets have been uniquely saved to database history and mapped to the Live Geo Map below.
+              {imgError && (
+                <p className="readout mt-3 border-l-2 border-flag pl-3 text-xs text-foam" role="alert">
+                  Could not download that tile — {imgError}
                 </p>
               )}
+              {status === 'done' && results && results.length > 0 && (() => {
+                const unlocated = results.filter((d) => d.lat == null || d.lon == null).length;
+                return (
+                  <p className="mt-3 text-xs text-foamdim flex items-start gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ping" />
+                    <span>
+                      All {results.length} targets have been uniquely saved to database history.
+                      {unlocated === 0
+                        ? ' Every target carried a navigation fix and is mapped to the Live Geo Map below.'
+                        : ` ${results.length - unlocated} of ${results.length} carried a navigation fix and appear on the Live Geo Map below; ${unlocated} had no fix in the source XTF and are recorded without a position.`}
+                    </span>
+                  </p>
+                );
+              })()}
             </div>
           </div>
         </section>
@@ -601,6 +721,37 @@ export default function Upload() {
               onSelect={setSelectedId}
               className="mt-4 max-h-[60vh]"
             />
+          )}
+
+          {/* Catalogue-wide export, directly under the table it exports. */}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t hairline pt-4">
+            <p className="readout text-xs text-foamdim">
+              Export the full target registry — {records.length} {records.length === 1 ? 'record' : 'records'}.
+              <span className="ml-2">GeoJSON carries only georeferenced targets; CSV includes every record.</span>
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={exporting !== null || loading}
+                onClick={() => runExport('geojson')}
+              >
+                {exporting === 'geojson' ? 'Preparing…' : 'Download GeoJSON'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={exporting !== null || loading}
+                onClick={() => runExport('csv')}
+              >
+                {exporting === 'csv' ? 'Preparing…' : 'Download CSV'}
+              </button>
+            </div>
+          </div>
+          {exportError && (
+            <p className="readout mt-3 border-l-2 border-flag pl-3 text-xs text-foam" role="alert">
+              {exportError}
+            </p>
           )}
         </section>
       </main>

@@ -13,23 +13,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.detection import Detection
 from app.models.survey import Survey
+from app.pipeline.acoustic.denoise import DenoiseConfig
 from app.pipeline.acoustic.tiling import TileMetadata, tile_xtf_waterfall
 from app.pipeline.acoustic.xtf_processor import XtfProcessor, XtfSurveyData
 from app.pipeline.interface import BaseDetector, DetectionResult
+from app.schemas.detection import detection_image_url
 from app.services.detection_service import _unique_id
 
 logger = logging.getLogger("nadir.services.xtf")
 
 
 def _project_coordinates(
-    lat: float,
-    lon: float,
+    lat: float | None,
+    lon: float | None,
     heading_deg: float,
     side: str,
     ground_range_m: float,
     along_track_offset_m: float = 0.0,
-) -> tuple[float, float]:
-    """Project georeferenced Lat/Lon coordinate given vehicle position, heading, side, and distance."""
+) -> tuple[float | None, float | None]:
+    """Project georeferenced Lat/Lon coordinate given vehicle position, heading, side, and distance.
+
+    Returns (None, None) when the originating tile carried no navigation fix — a target
+    detected without a vessel position stays unlocated rather than being placed somewhere
+    plausible.
+    """
+    if lat is None or lon is None:
+        return None, None
+
     # Earth radius in metres
     R = 6378137.0
 
@@ -60,7 +70,7 @@ async def process_xtf_file(
 ) -> dict:
     """Execute complete end-to-end processing of an XTF file.
 
-    1. Parse binary XTF and apply acoustic corrections.
+    1. Parse binary XTF, denoise each channel, and apply acoustic corrections.
     2. Register Survey in database.
     3. Slice corrected waterfall into overlapping JPG tiles.
     4. Run YOLO model inference concurrently on all generated tiles.
@@ -70,11 +80,20 @@ async def process_xtf_file(
     start_time = datetime.now(timezone.utc)
     logger.info("Starting processing for XTF file: %s (%d bytes)", filename, len(file_bytes))
 
-    # 1. Parse XTF and extract acoustic waterfall
+    # 1. Parse XTF, denoise each channel, and extract the acoustic waterfall
+    denoise_cfg = DenoiseConfig(
+        enabled=settings.DENOISE_ENABLED,
+        repair_bad_pings=settings.DENOISE_REPAIR_BAD_PINGS,
+        beam_pattern_correction=settings.DENOISE_BEAM_PATTERN,
+        destripe=settings.DENOISE_DESTRIPE,
+        despeckle=settings.DESPECKLE_METHOD,
+        filter_size=settings.DESPECKLE_FILTER_SIZE,
+    )
     processor = XtfProcessor(
         strip_water_col=True,
         correct_slant=True,
         normalize_gain=True,
+        denoise=denoise_cfg,
     )
     survey_data: XtfSurveyData = processor.process_file(file_bytes, filename)
 
@@ -134,6 +153,7 @@ async def process_xtf_file(
     # 5. Calculate acoustic measurements and persist detections into DB
     persisted_detections: list[Detection] = []
     tile_summaries = []
+    unlocated_count = 0
 
     for tile, raw_dets in tile_detections:
         tile_det_count = len(raw_dets)
@@ -141,7 +161,7 @@ async def process_xtf_file(
             "tile_id": tile.tile_id,
             "tile_index": tile.tile_index,
             "image_path": tile.image_path,
-            "image_url": f"/storage/tiles/survey_{survey.id}/{Path(tile.image_path).name}",
+            "image_url": detection_image_url(tile.image_path),
             "ping_start": tile.ping_start,
             "ping_end": tile.ping_end,
             "center_lat": tile.center_lat,
@@ -193,21 +213,31 @@ async def process_xtf_file(
 
             ping_num = int(tile.ping_start + cy * max(1, tile.ping_end - tile.ping_start))
 
+            located = det_lat is not None and det_lon is not None
+            if not located:
+                unlocated_count += 1
+
             note = (
                 f"XTF Target {det_res.cls} ({det_res.conf:.2f}) on {side} channel. "
                 f"Ground range: {range_m}m, Alt: {alt_m:.1f}m, Est height: {height_est_m}m."
             )
+            if not located:
+                note += " No navigation fix for this ping — position unknown."
 
-            # Spatial deduplication: check if this object is already in database within ~15m proximity
-            lat_tol = 0.00015
-            lon_tol = 0.00015 / max(0.1, math.cos(math.radians(det_lat)))
-            stmt = select(Detection).where(
-                Detection.cls == det_res.cls,
-                Detection.lat.between(det_lat - lat_tol, det_lat + lat_tol),
-                Detection.lon.between(det_lon - lon_tol, det_lon + lon_tol),
-            )
-            res = await db.execute(stmt)
-            existing_det = res.scalars().first()
+            # Spatial deduplication: check if this object is already in database within ~15m
+            # proximity. Only possible for located targets — without a position there is
+            # nothing to compare, so unlocated targets are always inserted.
+            existing_det = None
+            if located:
+                lat_tol = 0.00015
+                lon_tol = 0.00015 / max(0.1, math.cos(math.radians(det_lat)))
+                stmt = select(Detection).where(
+                    Detection.cls == det_res.cls,
+                    Detection.lat.between(det_lat - lat_tol, det_lat + lat_tol),
+                    Detection.lon.between(det_lon - lon_tol, det_lon + lon_tol),
+                )
+                res = await db.execute(stmt)
+                existing_det = res.scalars().first()
 
             if existing_det:
                 # Update confidence or image if newer detection is better, but DO NOT insert duplicate
@@ -272,6 +302,8 @@ async def process_xtf_file(
             "total_pings": survey_data.total_pings,
             "total_tiles": len(tiles),
             "total_detections": len(persisted_detections),
+            "unlocated_detections": unlocated_count,
+            "has_navigation": survey_data.has_navigation,
             "swath_width_m": survey_data.max_slant_range_m * 2.0,
             "bounds": bounds_dict,
         },
@@ -298,7 +330,7 @@ async def process_xtf_file(
                 "status": d.status,
                 "notes": d.notes,
                 "image_path": d.image_path,
-                "image_url": f"/storage/tiles/survey_{survey.id}/{Path(d.image_path).name}" if d.image_path else None,
+                "image_url": detection_image_url(d.image_path),
             }
             for d in persisted_detections
         ],
@@ -306,8 +338,17 @@ async def process_xtf_file(
             "processing_time_ms": elapsed_ms,
             "sonar_name": survey_data.sonar_name,
             "sample_rate": survey_data.sample_rate,
+            "denoise": {
+                "enabled": denoise_cfg.enabled,
+                "despeckle": denoise_cfg.despeckle,
+                "filter_size": denoise_cfg.filter_size,
+                "beam_pattern_correction": denoise_cfg.beam_pattern_correction,
+                "destripe": denoise_cfg.destripe,
+                "repair_bad_pings": denoise_cfg.repair_bad_pings,
+            },
             "stages": [
                 "Parse XTF navigation & acoustic channels",
+                "Denoise: bad-ping repair, spike clipping & speckle suppression",
                 "Slant-to-ground & water-column correction",
                 "Generate standard 640x640 JPG waterfall tiles",
                 "Concurrent YOLOv8 debris inference",

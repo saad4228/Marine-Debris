@@ -3,13 +3,9 @@
 export const SITE = {
   name: 'NADIR',
   tagline: 'Reading the seabed with sound.',
-  event: 'Smart India Hackathon 2026',
-  eventShort: 'SIH 2026',
-  problemStatement: 'PS 26057',
   maxDepth: 180,
 
-  // TODO: team name as registered on the SIH portal
-  teamName: 'Team Nadir',
+  teamName: 'BYTE ME',
 
   contact: {
     email: 'team@nadir.example', // TODO
@@ -43,29 +39,29 @@ export const SITE = {
 
   pipeline: [
     {
-      title: 'Ingest and correct the water column',
+      title: 'Ingest and correct the geometry',
       body:
-        'Raw XTF survey lines come in ping by ping. Each ping is a time series of echo intensity, so we convert slant range to ground range using the towfish altitude, strip the water-column samples, and normalise gain across range so a rock at 80 m looks like a rock at 20 m.',
+        'Raw XTF survey lines come in ping by ping. Each ping is a time series of echo intensity, so we detect the first bottom return, strip the water column, and convert slant range to ground range with the towfish altitude. Files that defeat the standard parser fall through to a byte-level reader rather than being rejected.',
+    },
+    {
+      title: 'Clean the record',
+      body:
+        'Dead and saturated pings are rebuilt from their neighbours rather than dropped, so every row stays aligned to its navigation fix. The beam pattern and along-track banding are flattened, then speckle is suppressed in the log domain with a Lee filter followed by a bilateral filter — the same order the detector was trained on.',
     },
     {
       title: 'Tile the waterfall',
       body:
-        'The corrected waterfall is cut into overlapping tiles. The overlap is larger than the biggest target we expect, so nothing is ever split across a seam. Every tile keeps its ping range and side so results map straight back to the survey.',
+        'Port and starboard are joined into one waterfall and cut into overlapping 640×640 tiles, so nothing is split across a seam. Every tile keeps its ping range, side and altitude, so any box maps straight back to the survey line.',
     },
     {
-      title: 'Detect and classify with echo and shadow',
+      title: 'Detect and classify',
       body:
-        'A detector proposes candidates. Each is classified from two aligned crops, the echo and the shadow behind it, with the range and altitude that produced them. Shadow length and shape encode height and profile, and are often more discriminative than the echo.',
+        'A YOLOv8 detector runs on every tile across 14 debris and hazard classes, reaching mAP@50 of 0.775 on its validation set. It returns a class, a confidence and a box — everything else is derived from that box and the geometry around it.',
     },
     {
-      title: 'Geotag, measure, reconcile',
+      title: 'Geotag, measure, review',
       body:
-        'Boxes become positions using the ping header and ground range. Length, width and shadow become metres; shadow becomes height; class and volume become an estimated weight. Targets seen from two lines are merged into one record.',
-    },
-    {
-      title: 'Forecast, score, plan',
-      body:
-        'Currents and wind drive a drift forecast for anything that can move. Hazards at the forecast position feed a risk score and a priority tier. The urgent tier becomes an optimised route for the clean-up vessel.',
+        'Boxes become positions from the ping header, heading and ground range; the acoustic shadow becomes a height. Targets seen twice are reconciled, anything without a navigation fix is flagged rather than placed, and every record waits as a candidate until an analyst confirms or rejects it.',
     },
   ],
 
@@ -101,13 +97,17 @@ export const SITE = {
   //   mobility  0..1, how readily the object moves under current (0 = anchored)
   //   windage   0..1, fraction of wind speed transferred when at/near surface
   //   severity  0..1, harm if left in place
+  // Entries carrying aliasOf are spelling variants the model emits (the YOLO weights
+  // use tire/ghost_net, the catalogue uses tyre/ghost-net). They exist so classInfo()
+  // resolves either spelling; they are NOT shown as separate filters — see
+  // CLASS_FILTERS below, and api.js folds incoming ids onto the canonical one.
   classes: [
     { id: 'tyre', label: 'Tyre', density: 320, mobility: 0.25, windage: 0.0, severity: 0.45 },
-    { id: 'tire', label: 'Tyre', density: 320, mobility: 0.25, windage: 0.0, severity: 0.45 },
+    { id: 'tire', label: 'Tyre', density: 320, mobility: 0.25, windage: 0.0, severity: 0.45, aliasOf: 'tyre' },
     { id: 'drum', label: 'Drum', density: 260, mobility: 0.5, windage: 0.02, severity: 0.85 },
     { id: 'container', label: 'Container', density: 140, mobility: 0.05, windage: 0.0, severity: 0.7 },
     { id: 'ghost-net', label: 'Ghost net', density: 45, mobility: 0.9, windage: 0.03, severity: 0.9 },
-    { id: 'ghost_net', label: 'Ghost net', density: 45, mobility: 0.9, windage: 0.03, severity: 0.9 },
+    { id: 'ghost_net', label: 'Ghost net', density: 45, mobility: 0.9, windage: 0.03, severity: 0.9, aliasOf: 'ghost-net' },
     { id: 'chain', label: 'Chain or cable', density: 900, mobility: 0.02, windage: 0.0, severity: 0.4 },
     { id: 'bottle', label: 'Bottle', density: 400, mobility: 0.8, windage: 0.03, severity: 0.5 },
     { id: 'can', label: 'Can', density: 750, mobility: 0.65, windage: 0.02, severity: 0.5 },
@@ -273,37 +273,26 @@ export const SITE = {
   ],
 
   team: [
-    // TODO: real team
-    { name: 'Saad Ahmed', role: 'Team lead, acoustics and pipeline', focus: 'XTF ingest, slant-range and gain correction, this site', link: 'https://gitlab.com/saad' },
-    { name: 'Member Two', role: 'Machine learning', focus: 'YOLO detector training, echo and shadow classifier', link: null },
-    { name: 'Member Three', role: 'Backend', focus: 'FastAPI service, geotagging, OpenDrift integration', link: null },
-    { name: 'Member Four', role: 'Geospatial', focus: 'Hazard layers, risk model, GeoJSON export', link: null },
-    { name: 'Member Five', role: 'Operations', focus: 'Mission planner, vessel model, review workflow', link: null },
-    { name: 'Member Six', role: 'Systems', focus: 'Inference serving, packaging, demo hardware', link: null },
+    { name: 'Mohammed Saad', role: 'Team lead', focus: 'Frontend, geomapping, presentation', link: null },
+    { name: 'Jatin Baghel', role: 'Machine learning', focus: 'Model building, YOLO pipeline, dataset collection', link: null },
+    { name: 'Ricky Mukherjee', role: 'Full stack', focus: 'Acoustic pipeline, frontend and backend, testing and debugging', link: null },
+    { name: 'Hanzala Rafat', role: 'Research', focus: 'Research and dataset collection', link: null },
+    { name: 'Dhruv Vishwakarma', role: 'Operations', focus: 'Operations, research, project management', link: null },
+    { name: 'Yogita', role: 'Quality and delivery', focus: 'Presentation, testing and review', link: null },
   ],
 
   collaborators: [
-    // TODO: real mentors
-    { name: 'Dr. A. Mentor', affiliation: 'Department of Ocean Engineering, TODO Institute', role: 'Faculty mentor, underwater acoustics' },
-    { name: 'B. Surveyor', affiliation: 'TODO Hydrographic Survey Unit', role: 'Industry mentor, side-scan operations' },
-    { name: 'C. Advisor', affiliation: 'TODO Marine Conservation Trust', role: 'Domain advisor, debris classes and clean-up priorities' },
+    { name: 'Mrs. Ruchira N. Selote', affiliation: 'Department of Computer Science and Engineering', role: 'Adjunct Assistant Professor — project mentor' },
   ],
 
-  dataSources: [
-    { name: 'Side-scan survey lines', detail: 'TODO: dataset, publisher, sensor, frequency, licence.' },
-    { name: 'Ocean currents and waves', detail: 'INCOIS Indian Ocean forecasts (primary), Copernicus Marine Service (fallback), Open-Meteo Marine API (development).' },
-    { name: 'Wind', detail: 'Open-Meteo weather API, 10 m wind. IMD forecasts for the operational build.' },
-    { name: 'Drift model', detail: 'OpenDrift object-drift module with per-class leeway; browser demo uses a simplified advection model.' },
-    { name: 'Protected areas', detail: 'Protected Planet (WDPA) API.' },
-    { name: 'Ports, lanes, restricted areas', detail: 'OpenStreetMap via Overpass API; OpenSeaMap seamarks.' },
-    { name: 'Bathymetry', detail: 'GEBCO 2024 grid.' },
-    { name: 'Base map', detail: 'OpenStreetMap data, CARTO Dark Matter tiles.' },
-  ],
 };
 
 // API configuration.
 // mode: 'mock' runs everything in the browser from seeded random numbers.
 // mode: 'live' calls baseUrl + the endpoints below.
+// The classes users can filter by: canonical entries only, no spelling aliases.
+export const CLASS_FILTERS = SITE.classes.filter((c) => !c.aliasOf);
+
 export const API = {
   mode: 'live',
   baseUrl: '/api/v1',

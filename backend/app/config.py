@@ -31,8 +31,21 @@ class Settings(BaseSettings):
         return p
 
     # ── ML Model ──────────────────────────────────────────────────────────
-    MODEL_PATH: str = "best.pt"
+    MODEL_PATH: str = "new.pt"
     USE_STUB_MODEL: bool = False
+
+    # ── Acoustic denoising ────────────────────────────────────────────────
+    # Applied to each sonar channel before the waterfall is sliced into JPG tiles.
+    DENOISE_ENABLED: bool = True
+    # One filter, or an ordered chain joined by "+": lee | median | bilateral | nlm |
+    # wavelet | none. Default "lee+bilateral" matches how the deployed weights were
+    # trained; changing it changes the image statistics the model sees at inference.
+    # "bilateral" needs opencv-python; "nlm"/"wavelet" need scikit-image.
+    DESPECKLE_METHOD: str = "lee+bilateral"
+    DESPECKLE_FILTER_SIZE: int = 5
+    DENOISE_BEAM_PATTERN: bool = True
+    DENOISE_DESTRIPE: bool = True
+    DENOISE_REPAIR_BAD_PINGS: bool = True
 
 
 settings = Settings()

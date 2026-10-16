@@ -1,7 +1,8 @@
 import { Link, useParams } from 'react-router-dom';
 import { useRecords } from '../lib/useRecords.js';
 import { formatLatLon } from '../lib/geo.js';
-import { formatKg } from '../lib/utils.js';
+import { formatKg, formatDims } from '../lib/utils.js';
+import { ENABLE_DRIFT_PHYSICS } from '../lib/drift.js';
 import SurfaceBand from '../components/SurfaceBand.jsx';
 import SonarTile from '../components/SonarTile.jsx';
 import TierBadge from '../components/TierBadge.jsx';
@@ -32,11 +33,9 @@ export default function DetectionDetail() {
   const depthVal = r.depth_m ?? r.depthM ?? r.depth ?? 30.0;
   const dateStr = r.detectedAt || r.created_at ? new Date(r.detectedAt || r.created_at).toUTCString() : 'Live Survey Ingested';
 
-  const dimsStr = Array.isArray(r.dims)
-    ? r.dims.map((v) => Number(v).toFixed(1)).join(' × ')
-    : typeof r.dims === 'object' && r.dims
-    ? `${Number(r.dims.length || 2.0).toFixed(1)} × ${Number(r.dims.width || 1.5).toFixed(1)} × ${Number(r.dims.height || 1.0).toFixed(1)}`
-    : '2.0 × 1.5 × 1.0';
+  const dimsStr = formatDims(r.dims);
+
+  const nodes = (r.track || []).filter((n) => n.hours > 0 && n.hours % 6 === 0);
 
   const specs = [
     ['Class', r.clsInfo?.label || r.cls],
@@ -80,7 +79,11 @@ export default function DetectionDetail() {
                 ))}
               </tbody>
             </table>
-            <p className="mt-2 text-sm text-foamdim">Displacement over 48 h: {r.risk.displacementKm.toFixed(2)} km. {r.risk.displacementKm < 0.05 ? 'Below the mobility threshold for this class: expected to stay put.' : ''}</p>
+            <p className="mt-2 text-sm text-foamdim">
+              {ENABLE_DRIFT_PHYSICS
+                ? `Displacement over 48 h: ${r.risk.displacementKm.toFixed(2)} km. ${r.risk.displacementKm < 0.05 ? 'Below the mobility threshold for this class: expected to stay put.' : ''}`
+                : 'Drift physics is bypassed for this prototype: targets remain stationary at the surveyed sonar fix.'}
+            </p>
             <Link to={`/map?sel=${r.id}`} className="btn btn-ghost btn-sm mt-4">Open on the full map</Link>
           </div>
 

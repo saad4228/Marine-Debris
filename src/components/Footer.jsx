@@ -9,7 +9,7 @@ export default function Footer() {
           <p className="font-display text-lg font-black">{SITE.name}</p>
           <p className="mt-1 text-foamdim">{SITE.tagline}</p>
           <p className="readout mt-4 text-foamdim">
-            {SITE.event} · {SITE.problemStatement}
+            Side-scan sonar survey analysis
           </p>
         </div>
         <div>

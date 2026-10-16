@@ -36,3 +36,10 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def db_session():
+    """A session against the in-memory test database, for exercising services directly."""
+    async with test_async_session() as session:
+        yield session

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { SITE } from '../site/data.js';
+import { SITE, CLASS_FILTERS } from '../site/data.js';
 import { api, isMock } from '../site/api.js';
 import { TIERS, HAZARD_KINDS } from '../lib/risk.js';
 import { formatHours, formatKg, cx } from '../lib/utils.js';
+import { ENABLE_DRIFT_PHYSICS } from '../lib/drift.js';
 import TierBadge from './TierBadge.jsx';
 
 function Toggle({ checked, onChange, children }) {
@@ -193,7 +194,11 @@ export default function MapSidebar({
                       </div>
                       <div className="readout mt-1 flex items-center justify-between text-[11px] text-foamdim">
                         <span>conf {r.conf.toFixed(2)} · {formatKg(r.weightKg)}</span>
-                        <span className="text-ping">drift {r.risk.displacementKm.toFixed(2)} km</span>
+                        {ENABLE_DRIFT_PHYSICS ? (
+                          <span className="text-ping">drift {r.risk.displacementKm.toFixed(2)} km</span>
+                        ) : (
+                          <span className="text-foamdim font-mono">stationary</span>
+                        )}
                       </div>
                     </button>
                   </li>
@@ -321,7 +326,12 @@ export default function MapSidebar({
               <p className="font-display text-xs font-bold uppercase tracking-wider text-foamdim">Map Layer Overlays</p>
               <div className="mt-2 divide-y hairline border-y hairline">
                 <Toggle checked={layers.drift} onChange={(v) => setLayers((l) => ({ ...l, drift: v }))}>
-                  Drift tracks (dotted 6 h nodes)
+                  <span>
+                    Drift tracks (dotted 6 h nodes)
+                    {!ENABLE_DRIFT_PHYSICS && (
+                      <span className="ml-1 text-[10px] text-foamdim font-mono">(bypassed)</span>
+                    )}
+                  </span>
                 </Toggle>
                 <Toggle checked={layers.hazards} onChange={(v) => setLayers((l) => ({ ...l, hazards: v }))}>
                   Hazard zones (marine parks & lanes)
@@ -359,7 +369,7 @@ export default function MapSidebar({
             <div>
               <p className="font-display text-xs font-bold uppercase tracking-wider text-foamdim">Target Classes</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {SITE.classes.map((c) => (
+                {CLASS_FILTERS.map((c) => (
                   <button
                     key={c.id}
                     type="button"

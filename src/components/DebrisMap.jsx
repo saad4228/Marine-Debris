@@ -9,7 +9,8 @@ import { SITE } from '../site/data.js';
 import { api } from '../site/api.js';
 import { HAZARD_KINDS } from '../lib/risk.js';
 import { destination, formatLatLon } from '../lib/geo.js';
-import { formatKg, prefersReducedMotion, cx } from '../lib/utils.js';
+import { formatKg, prefersReducedMotion, cx, formatDims } from '../lib/utils.js';
+import { ENABLE_DRIFT_PHYSICS } from '../lib/drift.js';
 import TierBadge from './TierBadge.jsx';
 
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
@@ -108,14 +109,16 @@ function HazardLayer({ hazards, onSelectHazard }) {
   });
 }
 
-function CurrentLayer({ hours }) {
+// Sample the current field over the area the targets are actually in. Previously this
+// always sampled a fixed box around SITE.area.center, so with a survey anywhere else the
+// flow arrows were drawn thousands of km from the detections they were meant to describe.
+function CurrentLayer({ hours, bounds }) {
   const [grid, setGrid] = useState([]);
   useEffect(() => {
     let alive = true;
-    const [lat, lon] = SITE.area.center;
-    api.currentGrid({ south: lat - 0.13, north: lat + 0.13, west: lon - 0.15, east: lon + 0.15 }, 0.018, hours).then((g) => alive && setGrid(g));
+    api.currentGrid(bounds, 0.018, hours).then((g) => alive && setGrid(g));
     return () => { alive = false; };
-  }, [hours]);
+  }, [hours, bounds]);
   return grid.map((c, i) => {
     const lenKm = 0.25 + c.speed * 1.4;
     const head = destination({ lat: c.lat, lon: c.lon }, c.bearing, lenKm);
@@ -132,8 +135,9 @@ function CurrentLayer({ hours }) {
 }
 
 function DriftLayer({ records, hours, selectedId }) {
+  if (!ENABLE_DRIFT_PHYSICS || hours <= 0) return null;
   return records.map((r) => {
-    if (hours <= 0 || !r.track || r.track.length < 2) return null;
+    if (!r.track || r.track.length < 2) return null;
     const pts = r.track.slice(0, hours + 1).map((p) => [p.lat, p.lon]);
     const end = r.track[Math.min(hours, r.track.length - 1)] || { spreadM: 0, lat: r.lat, lon: r.lon };
     const sel = r.id === selectedId;
@@ -175,11 +179,7 @@ function RouteLayer({ route }) {
 
 function DebrisPopup({ r, hours }) {
   const end = r.track?.[Math.min(hours, (r.track?.length || 1) - 1)] || { lat: r.lat, lon: r.lon, hours: 0 };
-  const dimsStr = Array.isArray(r.dims)
-    ? r.dims.join(' × ')
-    : typeof r.dims === 'object' && r.dims
-    ? `${Number(r.dims.length || 2.0).toFixed(1)} × ${Number(r.dims.width || 1.5).toFixed(1)} × ${Number(r.dims.height || 1.0).toFixed(1)}`
-    : '2.0 × 1.5 × 1.0';
+  const dimsStr = formatDims(r.dims);
 
   const shadowVal = r.shadowM ?? r.shadow_len_m ?? 1.5;
   const dispKm = r.risk?.displacementKm ?? 0;
@@ -201,7 +201,7 @@ function DebrisPopup({ r, hours }) {
         <dt>L×W×H</dt><dd className="text-foam">{dimsStr} m</dd>
         <dt>shadow</dt><dd className="text-foam">{typeof shadowVal === 'number' ? shadowVal.toFixed(1) : shadowVal} m</dd>
         <dt>weight</dt><dd className="text-foam">{formatKg(r.weightKg || 500)} est.</dd>
-        <dt>drift</dt><dd className="text-foam">{typeof dispKm === 'number' ? dispKm.toFixed(2) : '0.00'} km</dd>
+        <dt>drift</dt><dd className="text-foam">{ENABLE_DRIFT_PHYSICS && typeof dispKm === 'number' ? `${dispKm.toFixed(2)} km` : '0.00 km (static)'}</dd>
       </dl>
       {r.risk?.hazardsHit?.length > 0 && (
         <p className="mt-2 text-xs text-foamdim">Hazards: {r.risk.hazardsHit.map((h) => h.name).join('; ')}</p>
@@ -274,6 +274,26 @@ export default function DebrisMap({
     return [SITE.area.center];
   }, [validRecords, port]);
 
+  // Box around the located targets, clamped to a sane sampling span. Falls back to the
+  // configured survey area only when nothing is located.
+  const currentBounds = useMemo(() => {
+    const pts = validRecords.map((r) => [Number(r.lat), Number(r.lon)]);
+    if (pts.length === 0) {
+      const [lat, lon] = SITE.area.center;
+      return { south: lat - 0.13, north: lat + 0.13, west: lon - 0.15, east: lon + 0.15 };
+    }
+    const lats = pts.map((p) => p[0]);
+    const lons = pts.map((p) => p[1]);
+    const padLat = Math.max(0.02, (Math.max(...lats) - Math.min(...lats)) * 0.25);
+    const padLon = Math.max(0.02, (Math.max(...lons) - Math.min(...lons)) * 0.25);
+    return {
+      south: Math.min(...lats) - padLat,
+      north: Math.max(...lats) + padLat,
+      west: Math.min(...lons) - padLon,
+      east: Math.max(...lons) + padLon,
+    };
+  }, [validRecords]);
+
   const selected = validRecords.find((r) => r.id === selectedId) || null;
 
   return (
@@ -294,7 +314,7 @@ export default function DebrisMap({
         <FlyToSelected record={selected} />
 
         {layers.hazards && <HazardLayer hazards={hazards} />}
-        {layers.currents && <CurrentLayer hours={hours} />}
+        {layers.currents && <CurrentLayer hours={hours} bounds={currentBounds} />}
         {layers.drift && <DriftLayer records={validRecords} hours={hours} selectedId={selectedId} />}
         {layers.route && <RouteLayer route={route} />}
 

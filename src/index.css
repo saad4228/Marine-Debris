@@ -123,28 +123,125 @@ canvas { display: block; }
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  gap: 0.55rem;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 0.95rem;
   letter-spacing: -0.01em;
-  padding: 0.8rem 1.25rem;
+  padding: 0.75rem 1.35rem;
+  border-radius: 6px;
   border: 1px solid transparent;
   text-decoration: none;
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  user-select: none;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease,
+              transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease;
 }
-.btn:active { transform: translateY(1px); }
-.btn-solid { background: var(--color-ping); color: var(--color-abyss); border-color: var(--color-ping); }
-.btn-solid:hover { background: #ffc35a; border-color: #ffc35a; }
+.btn:active { transform: translateY(1px) scale(0.99); }
+
+/* Keyboard focus must be obvious against a near-black ground — the default ring is
+   invisible here. Only :focus-visible, so pointer clicks stay clean. */
+.btn:focus-visible,
+.chip:focus-visible {
+  outline: 2px solid var(--color-ping);
+  outline-offset: 2px;
+}
+
+/* Primary Call To Action */
+.btn-solid {
+  background: linear-gradient(180deg, #f7b447 0%, #eb9d29 100%);
+  color: #03070c;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(242, 169, 59, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.btn-solid:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ffc568 0%, #f2a93b 100%);
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 4px 20px rgba(242, 169, 59, 0.38), 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transform: translateY(-1.5px);
+  color: #010408;
+}
+.btn-solid:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Secondary Ambient Action */
 .btn-ghost {
   color: var(--color-foam);
-  border-color: color-mix(in srgb, var(--color-foamdim) 45%, transparent);
-  background: color-mix(in srgb, var(--color-abyss) 55%, transparent);
+  background: rgba(8, 26, 38, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(147, 170, 176, 0.28);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-.btn-ghost:hover { border-color: var(--color-foam); }
-.btn-sm { padding: 0.45rem 0.8rem; font-size: 0.85rem; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-ghost:hover:not(:disabled) {
+  color: #ffffff;
+  background: rgba(46, 147, 168, 0.18);
+  border-color: rgba(143, 216, 219, 0.6);
+  box-shadow: 0 4px 16px rgba(4, 16, 26, 0.5), 0 0 14px rgba(143, 216, 219, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transform: translateY(-1.5px);
+}
+.btn-ghost:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
+  background: rgba(8, 26, 38, 0.7);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* Specific Review Action Buttons */
+.btn-confirm {
+  border-color: rgba(56, 239, 125, 0.35);
+  background: rgba(56, 239, 125, 0.08);
+  color: #a8f5c8;
+}
+.btn-confirm:hover:not(:disabled) {
+  border-color: #38ef7d;
+  background: rgba(56, 239, 125, 0.18);
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(56, 239, 125, 0.28);
+}
+.btn-confirm[aria-pressed="true"] {
+  background: rgba(56, 239, 125, 0.25);
+  border-color: #38ef7d;
+  color: #38ef7d;
+  font-weight: 800;
+}
+
+.btn-reject {
+  border-color: rgba(255, 77, 61, 0.35);
+  background: rgba(255, 77, 61, 0.08);
+  color: #ffb4ac;
+}
+.btn-reject:hover:not(:disabled) {
+  border-color: #ff4d3d;
+  background: rgba(255, 77, 61, 0.18);
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(255, 77, 61, 0.28);
+}
+.btn-reject[aria-pressed="true"] {
+  background: rgba(255, 77, 61, 0.25);
+  border-color: #ff4d3d;
+  color: #ff4d3d;
+  font-weight: 800;
+}
+
+.btn-sm {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.84rem;
+  border-radius: 5px;
+  gap: 0.4rem;
+}
+
+/* Disabled must not respond to hover at all, or a locked control still feels live. */
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+  filter: grayscale(40%);
+}
 
 /* ---------- rules ---------- */
 
@@ -157,19 +254,46 @@ canvas { display: block; }
 .chip {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 0.85rem;
-  padding: 0.45rem 0.85rem;
-  border: 1px solid color-mix(in srgb, var(--color-foamdim) 40%, transparent);
+  font-size: 0.83rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid rgba(147, 170, 176, 0.25);
   color: var(--color-foamdim);
-  background: transparent;
+  background: rgba(6, 20, 30, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   cursor: pointer;
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
-  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
 }
-.chip:hover { color: var(--color-foam); border-color: var(--color-foam); }
-.chip[aria-pressed="true"] { color: var(--color-abyss); background: var(--color-ping); border-color: var(--color-ping); }
+.chip:hover {
+  color: var(--color-foam);
+  border-color: rgba(147, 170, 176, 0.5);
+  background: rgba(11, 40, 56, 0.5);
+  transform: translateY(-1px);
+}
+.chip:active {
+  transform: translateY(1px);
+}
+.chip[aria-pressed="true"] {
+  color: #03070c;
+  background: linear-gradient(180deg, #fbb84d 0%, #eb9d29 100%);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 12px rgba(242, 169, 59, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  font-weight: 800;
+  transform: none;
+}
+.chip[aria-pressed="true"] .readout {
+  color: rgba(3, 7, 12, 0.85);
+  background: rgba(0, 0, 0, 0.12);
+  padding: 0.08rem 0.35rem;
+  border-radius: 3px;
+  font-weight: 800;
+}
 
 /* ---------- tables ---------- */
 
@@ -317,6 +441,11 @@ canvas { display: block; }
   100% { transform: scale(2.6); opacity: 0; }
 }
 
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
 /* ---------- leaflet skin ---------- */
 
 .leaflet-container {
@@ -399,6 +528,7 @@ canvas { display: block; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .scroll-cue, .stage-active, .rise-in, .debris-marker .ring { animation: none; }
+  .btn-solid:hover:not(:disabled) { transform: none; }
   .rise-in { opacity: 1; transform: none; }
   *, *::before, *::after { transition-duration: 0.01ms !important; }
 }
